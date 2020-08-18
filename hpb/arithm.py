@@ -1,6 +1,7 @@
 
 import torch
 import torch.nn as nn
+from torch.nn.utils import *
 from math import log, pi
 import numpy as np
 from scipy import optimize
@@ -35,22 +36,7 @@ def calc_BRE_term(Precision, conf_param, bound, params, params_0, lambda_prior_,
     return bre, kl
 
 
-def network_params(model):
-    """
-    Return a list containing names and shapes of neural network layers
-    """
 
-    layers = []
-    ind = 0
-    for name, param in model.named_parameters():
-        if param.requires_grad:
-            shape = model.state_dict()[name].shape
-            params = np.ravel(param.data.cpu().numpy())
-            ind2 = np.size(params)
-            ind = ind2
-            layers.append((name, ind, shape))
-        
-    return layers
 
 def train_model(num_epochs, loader, nn_model, criterion, optimizer, device):
     # TODO: Remove, or reimplement in hessianpacbayes.py

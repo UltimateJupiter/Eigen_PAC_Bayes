@@ -6,7 +6,6 @@ import numpy as np
 import time
 import itertools
 
-
 def prepare_net(net, use_gpu=True):
 
     handle = None
@@ -35,3 +34,35 @@ def prepare_net(net, use_gpu=True):
         print('No CUDA devices available, run on CPUs')
     
     return net, device, handle
+
+def log(info, print_log=True):
+    if print_log:
+        print("[{}]  {}".format(datetime.datetime.now(), info))
+
+def get_tensor_size(tensor):
+    return tensor.element_size() * tensor.nelement()
+
+def get_tensor_dict_size(tensor_dict, p=False):
+    ret = 0
+    for k in tensor_dict:
+        ret += get_tensor_size(tensor_dict[k])
+    if p:
+        print("{:.4g} G".format(ret / (2 ** 30)))
+    return ret
+
+def network_params(model):
+    """
+    Return a list containing names and shapes of neural network layers
+    """
+
+    layers = []
+    ind = 0
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            shape = model.state_dict()[name].shape
+            params = np.ravel(param.data.cpu().numpy())
+            ind2 = np.size(params)
+            ind = ind2
+            layers.append((name, ind, shape))
+        
+    return layers
