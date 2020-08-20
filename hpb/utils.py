@@ -35,7 +35,7 @@ def prepare_net(net, use_gpu=True):
     
     return net, device, handle
 
-def log(info, print_log=True):
+def plog(info, print_log=True):
     if print_log:
         print("[{}]  {}".format(datetime.datetime.now(), info))
 

@@ -3,9 +3,9 @@ import torch.nn as nn
 from .utils import network_params
 import torch.nn.functional as F
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
-from .utils import *
 from .arithm import *
 from math import log
+from .utils import *
 import copy
 import time
 
@@ -16,7 +16,7 @@ class PacBayesLoss(nn.Module):
     lambda_prior_ : int Parameter
         Prior distribution (P(0,λI) variance .
         
-    sigma_posterior_ : {torch array, Parameter}
+    sigma_post_ : {torch array, Parameter}
         Posterior distribution N(w,s) variance .
         
     net : Neural network model
@@ -35,33 +35,40 @@ class PacBayesLoss(nn.Module):
     
     d_size : int
         Number of NN parameters
-    flat_params : torch array of shape (d_size,)
+    mean_post : torch array of shape (d_size,)
         flat array of NN parameters
-    params_0 : torch array of shape (d_size,)
+    mean_prior : torch array of shape (d_size,)
         mean of Prior distribution .
     """
-    def __init__(self, lambda_prior_, sigma_posterior_, net, flat_params, conf_param, precision, 
-                 bound, data_size, mean_prior, device):
+    def __init__(self, net, mean_prior, lambda_prior_, mean_post, sigma_post_, conf_param, precision, 
+                 bound, data_size, device):
         
         super(PacBayesLoss, self).__init__()
         self.device = device
+        self.net_orig = net
         self.model = copy.deepcopy(net).to(self.device)
+
+        self.mean_prior = mean_prior.to(self.device)
         self.lambda_prior_ = nn.Parameter(lambda_prior_)
-        self.sigma_posterior_ = nn.Parameter(sigma_posterior_)
-        self.flat_params = nn.Parameter(flat_params)
+        self.mean_post = nn.Parameter(mean_post)
+        self.sigma_post_ = nn.Parameter(sigma_post_)
+        
         self.precision = precision
         self.conf_param = conf_param
         self.bound = bound
         self.data_size = data_size
-        self.mean_prior = mean_prior.to(self.device)
-        self.d_size = flat_params.size()[0]
+        self.d_size = mean_post.size()[0]
+        
         self.kl_value = None
+        
         for p in self.model.parameters():
             p.requires_grad = False
         
+        plog("BRE initialized")
+        
     def forward(self):
-        Bre_loss, kl_value = calc_BRE_term(self.precision, self.conf_param, self.bound, self.flat_params, 
-                                 self.params_0, self.lambda_prior_, self.sigma_posterior_, 
+        Bre_loss, kl_value = calc_BRE_term(self.precision, self.conf_param, self.bound,
+                                 self.mean_post, self.mean_prior, self.lambda_prior_, self.sigma_post_, 
                                  self.data_size, self.d_size)
         self.kl_value = kl_value
         return Bre_loss
@@ -77,11 +84,11 @@ class PacBayesLoss(nn.Module):
         snn_error = self.SNN_error(train_loader, delta_prime, n_mtcarlo_approx) 
         final_bound = []
 
-        j_round = torch.round(self.precision * (log(self.bound) - (2 * self.lambda_prior_)))
-        lambda_prior_ = 0.5 * (log(self.bound)- (j_round/self.precision)).clone().detach()
+        j_round = torch.Tensor.round(self.precision * (log(self.bound) - (2 * self.lambda_prior_)))
+        lambda_prior_ = 0.5 * (log(self.bound) - (j_round / self.precision)).clone().detach()
 
-        Bre_loss, kl = calc_BRE_term(self.precision, self.conf_param, self.bound, self.flat_params, 
-                        self.params_0, lambda_prior_, self.sigma_posterior_, 
+        Bre_loss, kl = calc_BRE_term(self.precision, self.conf_param, self.bound, self.mean_post, 
+                        self.mean_prior, lambda_prior_, self.sigma_post_, 
                         self.data_size, self.d_size)
         
         if torch.cuda.is_available():
@@ -97,13 +104,13 @@ class PacBayesLoss(nn.Module):
     
     def sample_weights(self):      
         """
-       Sample weights from the posterior distribution Q(flat_params, Sigma_posterior)
+        Sample weights from the posterior distribution Q(mean_post, Sigma_post)
         """
-        return self.flat_params + torch.randn(self.d_size).to(self.device) * torch.exp(self.sigma_posterior_)
+        return self.mean_post + torch.randn(self.d_size).to(self.device) * torch.Tensor.exp(self.sigma_post_)
     
     def SNN_error(self, loader, delta_prime, n_mtcarlo_approx):
         """
-      Compute upper bound on the error of the Stochastic neural network by application of Theorem of the sample convergence bound 
+        Compute upper bound on the error of the Stochastic neural network by application of Theorem of the sample convergence bound 
         """
         samples_errors = 0.
         snn_error = []
@@ -134,28 +141,28 @@ class mnnLoss(nn.Module):
     """ class for calcuting surrogate loss of the SNN (first term in minimization problem).
     Parameters
     ----------
-    flat_params : torch array of shape (d_size,)
+    mean_post : torch array of shape (d_size,)
         flat array of NN parameters
-    sigma_posterior_ : {torch array, Parameter}
-        Posterior distribution N(w,s) variance .
+    sigma_post_ : {torch array, Parameter}
+        post distribution N(w,s) variance .
     model : nn.Module 
         Architecture of neural network to evaluate
     d_size : int
         Number of NN parameters  
     """
-    def __init__(self, criterion, flat_params, sigma_posterior_, model, d_size, device):
+    def __init__(self, model, criterion, mean_post, sigma_post_, d_size, device):
         
         super(mnnLoss, self).__init__()
-        self.sigma_posterior_ = nn.Parameter(sigma_posterior_).to(device)
-        self.flat_params = nn.Parameter(flat_params).to(device)
+        self.sigma_post_ = nn.Parameter(sigma_post_).to(device)
+        self.mean_post = nn.Parameter(mean_post).to(device)
         self.d_size = d_size
         self.model = model.to(device)
         self.criterion = criterion.to(device)
         self.device = device
     
     def forward(self, images, labels):
-        self.noise = torch.randn(self.d_size).to(self.device) * torch.exp(self.sigma_posterior_)
-        vector_to_parameters(self.flat_params + self.noise, self.model.parameters())
+        self.noise = torch.randn(self.d_size).to(self.device) * torch.Tensor.exp(self.sigma_post_)
+        vector_to_parameters(self.mean_post + self.noise, self.model.parameters())
         outputs = self.model(images)
         # loss = self.criterion(outputs.float(), labels.long())
         loss = F.cross_entropy(outputs.float(), labels.long())

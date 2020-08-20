@@ -1,5 +1,6 @@
 import torch
 import pynvml
+import math
 from torch.utils.data import DataLoader
 from .utils import *
 from queue import Queue
@@ -16,16 +17,26 @@ class OnDeviceDataLoader():
 
         self.batch_inds = self.batch_inds_sep()
         self.batch_inds_q = Queue()
-        self.inds, self.inps, self.labels, self.batch_count = self.load_data()
-        log('On-Device dataset initialized')
+        self.inds, self.inps, self.labels, self.ds_size = self.load_data()
+        self.batch_count = math.ceil(self.ds_size / self.batchsize)
+        plog('On-Device dataset initialized')
     
     def mem_approx(self):
         sample_dl = DataLoader(self.ds, batch_size=1)
         batch_input, batch_label = iter(sample_dl).next()
         sample_size = get_tensor_size(batch_input) + get_tensor_size(batch_label)
         gig_size = sample_size * len(self.ds) / (2 ** 30)
-        log('Dataset size in memory: {:.4g}G'.format(gig_size))
+        plog('Dataset size in memory: {:.4g}G'.format(gig_size))
         return gig_size
+
+    def set_batchsize(self, batchsize=100):
+        
+        self.batchsize = batchsize
+        self.batch_inds = self.batch_inds_sep()
+        self.batch_inds_q = Queue()
+        self.batch_count = math.ceil(self.ds_size / self.batchsize)
+        plog("Modified batchsize to {}".format(self.batchsize))
+        return
     
     def __len__(self):
         return self.batch_count
@@ -38,14 +49,14 @@ class OnDeviceDataLoader():
             inps_stack.append(inp.to(self.device))
             labels_stack.append(label.to(self.device))
         
-        batch_count = len(inps_stack)
         inps, labels = torch.cat(inps_stack), torch.cat(labels_stack) # pylint: disable=no-member
-        return inds, inps, labels, batch_count
+        ds_size = len(inps)
+        return inds, inps, labels, ds_size
 
     def batch_inds_sep(self):
         batch_inds = []
         for i in np.arange(0, len(self.ds) - 1, self.batchsize):
-            batch_inds.append([i, i + self.batchsize - 1])
+            batch_inds.append([i, i + self.batchsize])
         batch_inds[-1][-1] = len(self.ds) - 1
         return batch_inds
     
@@ -116,7 +127,7 @@ class HDC_iterator():
         self.device = device
         self.out_device = out_device
         self.comp_layers = comp_layers
-        log('HDC {} initialized with batchsize {}'.format(sample_func.__name__, dataloader.batch_size))
+        plog('HDC {} initialized with batchsize {}'.format(sample_func.__name__, dataloader.batch_size))
         self.batch_count = self.dl.batch_count
         self.report_inds = list(range(1, self.batch_count, max(1, int(self.batch_count/10))))
 
@@ -142,7 +153,7 @@ def crop_dataset(dataset, crop=1, seed=0):
         # dataset = dataset[0: crop_index]
         torch.random.manual_seed(np.random.randint(1))
 
-    # log('Dataset size {}'.format(len(dataset)))
+    # plog('Dataset size {}'.format(len(dataset)))
     return dataset
 
 def dataloader_gen(dataset: torch.utils.data.Dataset, batchsize=1, remain_labels=None, shuffle=False, device='cpu'):

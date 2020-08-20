@@ -1,10 +1,11 @@
 import sys, os
 import torch
-from hpb.hessianpacbayes import PacBayes_Naive
+from hpb.hessianpacbayes import *
 
 test_dirc = '../hessian_eigenspace_overlap/CIFAR10_Exp1/experiments/LeNet5_fixlr0.01'
 sd_file = 'experiment_log/run_1/models/final.pth'
-
+test_dirc = '../hessian_eigenspace_overlap/MNIST_Exp1/experiments/FC2_fixlr0.01'
+test_dirc = '../hessian_eigenspace_overlap/MNIST_Binary/experiments/FC1_600_fixlr0.01'
 def main():
 
     assert os.path.isdir(test_dirc)
@@ -17,13 +18,14 @@ def main():
     sd_path = os.path.join(test_dirc, sd_file)
     assert os.path.isfile(sd_path)
 
-    HPB = PacBayes_Naive(net, datasets)
+    HPB = PacBayes_Optim(net, datasets)
     HPB.load_sd(sd_path)
     gap = HPB.generalization_gap()
-    print(gap)
-    HPB.evaluate(True, True)
-    print('initialized')
-    HPB.naive_bound()
+    HPB.evaluate(train=True, log=True)
+
+    HPB.initialize_BRE()
+    HPB.optimize_PACB_RMSprop()
+    HPB.compute_bound()
 
 if __name__ == '__main__':
     main()
