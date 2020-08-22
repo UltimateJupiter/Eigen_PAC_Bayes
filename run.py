@@ -30,7 +30,7 @@ def main():
     mean_prior = HPB.get_prior_mean(sd_path_init)
     HPB.initialize_BRE(mean_prior=mean_prior)
 
-    HPB.optimize_PACB_RMSprop(learning_rate=0.001, epoch_num=1000, lr_decay_mode='step', lr_gamma=0.1, step_lr_decay=500)
+    HPB.optimize_PACB_RMSprop(learning_rate=0.001, epoch_num=400, lr_decay_mode='step', lr_gamma=0.1, step_lr_decay=300)
     # HPB.optimize_PACB_RMSprop(learning_rate=0.01, epoch_num=800, lr_decay_mode='exp', lr_gamma=0.1 ** (1/40))
     # exit()
     HPB.compute_bound(n_monte_carlo_approx=1000, sample_freq=100)
