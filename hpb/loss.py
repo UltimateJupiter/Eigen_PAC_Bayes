@@ -68,12 +68,12 @@ class PacBayesLoss(nn.Module):
         
     def forward(self):
         Bre_loss, kl_value = calc_BRE_term(self.precision, self.conf_param, self.bound,
-                                 self.mean_post, self.mean_prior, self.lambda_prior_, self.sigma_post_, 
+                                 self.mean_prior, self.mean_post, self.lambda_prior_, self.sigma_post_, 
                                  self.data_size, self.d_size)
         self.kl_value = kl_value
         return Bre_loss
     
-    def compute_bound(self, train_loader, delta_prime, n_mtcarlo_approx):
+    def compute_bound(self, train_loader, delta_prime, n_mtcarlo_approx, sample_freq):
         """
          Returns:
             SNN_train_error : upper bound on the train error of the Stochastic neural network by application of Theorem of
@@ -81,15 +81,15 @@ class PacBayesLoss(nn.Module):
             final_bound : Final Pac Bayes bound by application of Paper theorem on SNN_train_error 
         """
 
-        snn_error = self.SNN_error(train_loader, delta_prime, n_mtcarlo_approx) 
+        snn_error = self.SNN_error(train_loader, delta_prime, n_mtcarlo_approx, sample_freq) 
         final_bound = []
 
         j_round = torch.Tensor.round(self.precision * (log(self.bound) - (2 * self.lambda_prior_)))
         lambda_prior_ = 0.5 * (log(self.bound) - (j_round / self.precision)).clone().detach()
 
-        Bre_loss, kl = calc_BRE_term(self.precision, self.conf_param, self.bound, self.mean_post, 
-                        self.mean_prior, lambda_prior_, self.sigma_post_, 
-                        self.data_size, self.d_size)
+        Bre_loss, kl = calc_BRE_term(self.precision, self.conf_param, self.bound,
+                                 self.mean_prior, self.mean_post, self.lambda_prior_, self.sigma_post_, 
+                                 self.data_size, self.d_size)
         
         if torch.cuda.is_available():
             cuda_tensor = Bre_loss.cuda()
@@ -108,7 +108,7 @@ class PacBayesLoss(nn.Module):
         """
         return self.mean_post + torch.randn(self.d_size).to(self.device) * torch.Tensor.exp(self.sigma_post_)
     
-    def SNN_error(self, loader, delta_prime, n_mtcarlo_approx):
+    def SNN_error(self, loader, delta_prime, n_mtcarlo_approx, sample_freq):
         """
         Compute upper bound on the error of the Stochastic neural network by application of Theorem of the sample convergence bound 
         """
@@ -117,18 +117,17 @@ class PacBayesLoss(nn.Module):
         
         with torch.no_grad():
             t = time.time()
-            iter_counter = 10#00
+            iter_counter = sample_freq#00
             
             for i in range(n_mtcarlo_approx):
                 vector_to_parameters(self.sample_weights().detach(), self.model.parameters())
                 samples_errors += test_error(loader, self.model, self.device)
                 if i == iter_counter:
-                    print("It's {}th Monte-Carlo iteration".format(i))
                     snn_error_intermed = solve_kl_sup(samples_errors/i, (log(2/delta_prime)/i))
-                    print("SNN-error is {}".format(snn_error_intermed))
+                    plog("Iter {}; SNN error {:.4g}".format(i, snn_error_intermed))
                     snn_error.append(snn_error_intermed)
-                    print("Computational time for {} is {}".format(i, time.time() - t))
-                    iter_counter += 10#00
+                    # print("Computational time for {} is {}".format(i, time.time() - t))
+                    iter_counter += sample_freq#00
 
         snn_final_error = solve_kl_sup(samples_errors/n_mtcarlo_approx, (log(2/delta_prime)/n_mtcarlo_approx))
         snn_error.append(snn_final_error)
