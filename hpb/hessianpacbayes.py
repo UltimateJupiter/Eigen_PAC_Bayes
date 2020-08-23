@@ -11,12 +11,12 @@ from functools import reduce
 
 class PBModule_base():
 
-    def __init__(self, network: torch.nn.Module, datasets:list):
+    def __init__(self, network: torch.nn.Module, datasets:list, criterion):
 
         """network and datasets [trainset, testset]"""
 
         self.net, self.device, self.device_handle = prepare_net(network) # type=torch.nn.Model, str, None
-        self.criterion = torch.nn.CrossEntropyLoss()
+        self.criterion = criterion
         self.datasets = {True: datasets[0], False: datasets[1]}
         self.dataloaders = {train: OnDeviceDataLoader(self.datasets[train], 2048, device=self.device, shuffle=False) for train in [True, False]}
         self.BRE = None
@@ -153,7 +153,7 @@ class PacBayes_Optim(PacBayes_Naive):
         BRE = self.BRE
 
         optimizer = torch.optim.RMSprop(filter(lambda p: p.requires_grad, BRE.parameters()), lr=learning_rate, alpha=0.9)
-        nnloss = mnnLoss(self.net, torch.nn.CrossEntropyLoss(), BRE.mean_post, BRE.sigma_post_, BRE.d_size, self.device)
+        nnloss = mnnLoss(self.net, self.criterion, BRE.mean_post, BRE.sigma_post_, BRE.d_size, self.device)
 
         train_loader = self.dataloaders[True]
         train_loader.set_batchsize(batchsize)
