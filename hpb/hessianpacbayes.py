@@ -118,8 +118,8 @@ class PacBayes_Naive(PBModule_base):
     
 
 class PacBayes_Optim(PacBayes_Naive):
-    def __init__(self, network, datasets):
-        super().__init__(network, datasets)
+    def __init__(self, network, datasets, criterion):
+        super().__init__(network, datasets, criterion)
         return
 
     def optimize_PACB_RMSprop(self,
