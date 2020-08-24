@@ -4,6 +4,7 @@ from .utils import network_params
 import torch.nn.functional as F
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
 from .arithm import *
+from .test import *
 from math import log
 from .utils import *
 import copy
@@ -41,12 +42,13 @@ class PacBayesLoss(nn.Module):
         mean of Prior distribution .
     """
     def __init__(self, net, mean_prior, lambda_prior_, mean_post, sigma_post_, conf_param, precision, 
-                 bound, data_size, device):
+                 bound, data_size, accuracy_loss, device):
         
         super(PacBayesLoss, self).__init__()
         self.device = device
         self.net_orig = net
         self.model = copy.deepcopy(net).to(self.device)
+        self.accuracy_loss = accuracy_loss
 
         self.mean_prior = mean_prior.to(self.device)
         self.lambda_prior_ = nn.Parameter(lambda_prior_)
@@ -121,7 +123,7 @@ class PacBayesLoss(nn.Module):
             
             for i in range(n_mtcarlo_approx):
                 vector_to_parameters(self.sample_weights().detach(), self.model.parameters())
-                samples_errors += test_error(loader, self.model, self.device)
+                samples_errors += test_error(self.model, loader, self.accuracy_loss, self.device)
                 if i == iter_counter:
                     snn_error_intermed = solve_kl_sup(samples_errors/i, (log(2/delta_prime)/i))
                     plog("Iter {}; SNN error {:.4g}".format(i, snn_error_intermed))
@@ -164,5 +166,5 @@ class mnnLoss(nn.Module):
         vector_to_parameters(self.mean_post + self.noise, self.model.parameters())
         outputs = self.model(images)
         # loss = self.criterion(outputs.float(), labels.long())
-        loss = F.cross_entropy(outputs.float(), labels.long())
+        loss = self.criterion.forward(outputs.float(), labels.long())
         return loss

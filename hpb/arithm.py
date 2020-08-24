@@ -12,13 +12,22 @@ def calc_kullback_leibler(lambda_prior, sigma_post, mean_prior, mean_post, d_siz
     """
     Explicit calculation of KL divergence between prior N(0, lambda_prior * Id) and posterior N(flat_mean_prior, sigma_posterior_)
     """
+    # print('\nCalling kl')
+    # print("lambda_prior, sigma_post")
+    # print(lambda_prior, sigma_post)
+    # print("lambda_prior, sigma_post - Grad")
+    # print(lambda_prior.grad, sigma_post.grad)
     tr = torch.Tensor.norm(torch.Tensor.exp(2 * sigma_post), p=1) / lambda_prior # pylint:disable=no-member
     l2 = torch.Tensor.pow(torch.Tensor.norm(mean_post - mean_prior, p=2), 2) / lambda_prior
+    # print("tr, l2")
+    # print(tr, l2)
     
     d = d_size
     logdet_prior = d * torch.Tensor.log(lambda_prior)
     logdet_post = 2 * torch.Tensor.sum(sigma_post)
     kl = (tr + l2 - d + logdet_prior - logdet_post ) / 2.
+    # print("kl")
+    # print(kl)
 
     return kl
 
@@ -30,7 +39,6 @@ def calc_BRE_term(Precision, conf_param, bound, mean_prior, mean_post, lambda_pr
 
     lambda_prior = torch.Tensor.clamp(torch.Tensor.exp(2 * lambda_prior_ ), min = 1e-38, max = bound - 1e-8)
     kl = calc_kullback_leibler(lambda_prior, sigma_posterior_, mean_prior, mean_post, d_size)
-    # print(bound / lambda_prior)
     log_log = 2 * torch.Tensor.log(Precision * (torch.Tensor.log(bound / lambda_prior)))
     m = data_size
     log_ = log((((pi ** 2) * m) / (6 * conf_param)))
@@ -113,28 +121,6 @@ def test_model(loader, nn_model, device):
 
         print('Accuracy of the network on the testset: {} %'.format(100 * correct / total))
         
-    
-def test_error(loader, nn_model, device):
-    """
-    Compute the empirical error of neural network on a dataset loader
-    """
-    with torch.no_grad():
-        correct = 0
-        total = 0
-
-        for inputs, labels in iter(loader):
-            inputs = inputs.to(device)
-            labels = labels.to(device)
-
-            outputs = nn_model(inputs)
-            _, predicted = torch.Tensor.max(outputs.data, 1)
-
-            total += labels.size(0)
-            correct += (predicted == labels.long()).sum().item()
-        error = 1. - correct / total
-        # print(error)
-        return(error)
-    
     
 def apply_weights(model, modified_parameters, net_mean_prior):
     """

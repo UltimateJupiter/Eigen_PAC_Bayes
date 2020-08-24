@@ -11,7 +11,7 @@ from functools import reduce
 
 class PBModule_base():
 
-    def __init__(self, network: torch.nn.Module, datasets:list, criterion):
+    def __init__(self, network: torch.nn.Module, datasets:list, criterion, accuracy_loss):
 
         """network and datasets [trainset, testset]"""
 
@@ -19,6 +19,7 @@ class PBModule_base():
         self.criterion = criterion
         self.datasets = {True: datasets[0], False: datasets[1]}
         self.dataloaders = {train: OnDeviceDataLoader(self.datasets[train], 2048, device=self.device, shuffle=False) for train in [True, False]}
+        self.accuracy_loss = accuracy_loss
         self.BRE = None
     
     def initialize_BRE_zero_prior(self,
@@ -36,7 +37,7 @@ class PBModule_base():
 
         data_size = len(self.datasets[True])
 
-        self.BRE = PacBayesLoss(self.net, mean_prior, lambda_prior, mean_post, sigma_post, conf_param, precision, bound, data_size, self.device).to(self.device)
+        self.BRE = PacBayesLoss(self.net, mean_prior, lambda_prior, mean_post, sigma_post, conf_param, precision, bound, data_size, self.accuracy_loss, self.device).to(self.device)
     
     def initialize_BRE(self,
                        mean_prior,
@@ -54,7 +55,7 @@ class PBModule_base():
 
         data_size = len(self.datasets[True])
 
-        self.BRE = PacBayesLoss(self.net, mean_prior, lambda_prior, mean_post, sigma_post, conf_param, precision, bound, data_size, self.device).to(self.device)
+        self.BRE = PacBayesLoss(self.net, mean_prior, lambda_prior, mean_post, sigma_post, conf_param, precision, bound, data_size, self.accuracy_loss, self.device).to(self.device)
 
     def compute_bound(self,
                       n_monte_carlo_approx=1000,
@@ -87,7 +88,7 @@ class PBModule_base():
         return parameters_to_vector(net_tmp.parameters())
 
     def evaluate(self, train=True, log=False):
-        ret = eval_model(self.net, self.dataloaders[train], self.criterion, self.device)
+        ret = eval_model(self.net, self.dataloaders[train], self.criterion, self.accuracy_loss, self.device)
         if log:
             print(ret)
         return ret
@@ -110,16 +111,14 @@ class PacBayes_Naive(PBModule_base):
     """
     # TODO: Complete the first version of computation module. Done by Friday
 
-    def __init__(self, network, datasets):
-        super().__init__(network, datasets)
+    def __init__(self, network, datasets, criterion, accuracy_loss):
+        super().__init__(network, datasets, criterion, accuracy_loss)
         self.BRE = None
         return
     
-    
-
-class PacBayes_Optim(PacBayes_Naive):
-    def __init__(self, network, datasets, criterion):
-        super().__init__(network, datasets, criterion)
+class PacBayes_Optim(PBModule_base):
+    def __init__(self, network, datasets, criterion, accuracy_loss):
+        super().__init__(network, datasets, criterion, accuracy_loss)
         return
 
     def optimize_PACB_RMSprop(self,
@@ -176,10 +175,14 @@ class PacBayes_Optim(PacBayes_Naive):
             LOG_INFO = "Epoch {}: | BRE:{:.4g}, KL:{:.4g}, SNN_loss:{:.4g}, lr:{:2g} | took {:4g}s"
             SNN_loss, BRE_loss = [], []
             for i, (inputs, labels) in enumerate(iter(train_loader)):
+                # print('step {}'.format(i))
 
                 inputs, labels = inputs.to(self.device), labels.to(self.device)
                 loss1 = BRE()
                 loss1.backward(retain_graph=True)
+                # print("====\nOptimization B1")
+                # print(BRE.sigma_post_.grad)
+                # print(BRE.mean_post.grad)
 
                 loss2 = nnloss(inputs, labels)
                 BRE_loss.append(loss1.item())
@@ -187,14 +190,23 @@ class PacBayes_Optim(PacBayes_Naive):
 
                 self.net.zero_grad()
                 loss2.backward()
+                # print("====\nOptimization B2")
+                # print(BRE.sigma_post_.grad)
+                # print(BRE.mean_post.grad)
                 
-                # Optimization Step
                 weights_grad = torch.cat(list(Z.grad.view(-1) for Z in list(nnloss.model.parameters())), dim=0) # pylint: disable=no-member
                 BRE.mean_post.grad += weights_grad
-                BRE.sigma_post_.grad += weights_grad * nnloss.noise 
+                BRE.sigma_post_.grad += weights_grad * nnloss.noise
+
+                # print(weights_grad)
+                # print("====\nOptimization B3")
+                # print(BRE.sigma_post_.grad)
+                # print(BRE.mean_post.grad)
 
                 optimizer.step()
                 optimizer.zero_grad()
+                # if i == 3:
+                #     exit()
 
             BRE_losses.append(np.mean(BRE_loss))
             SNN_losses.append(np.mean(SNN_loss))
