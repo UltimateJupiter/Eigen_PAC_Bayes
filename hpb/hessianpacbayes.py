@@ -50,7 +50,8 @@ class PBModule_base():
         mean_post = parameters_to_vector(self.net.parameters())
         mean_prior = torch.zeros(mean_post.shape) # pylint: disable=no-member
 
-        sigma_post = torch.Tensor.abs(parameters_to_vector(self.net.parameters())).to(self.device).requires_grad_() # pylint: disable=no-member
+        # sigma_post = torch.Tensor.abs(parameters_to_vector(self.net.parameters())).to(self.device).requires_grad_() # pylint: disable=no-member
+        sigma_post = torch.log(torch.Tensor.abs(parameters_to_vector(self.net.parameters()))).to(self.device).requires_grad_() # pylint: disable=no-member
         lambda_prior = torch.tensor(lambda_prior, device=self.device).requires_grad_() # pylint: disable=not-callable
 
         data_size = len(self.datasets[True])
@@ -172,17 +173,13 @@ class PacBayes_Optim(PBModule_base):
         for epoch in np.arange(epoch_num):
 
             st = time.time()
-            LOG_INFO = "Epoch {}: | BRE:{:.4g}, KL:{:.4g}, SNN_loss:{:.4g}, lr:{:2g} | took {:4g}s"
+            LOG_INFO = "Epoch {}: | BRE:{:.4g}, KL:{:.4g}, SNN_loss:{:.4g}, Std_prior:{:.4g}, lr:{:2g} | took {:4g}s"
             SNN_loss, BRE_loss = [], []
             for i, (inputs, labels) in enumerate(iter(train_loader)):
-                # print('step {}'.format(i))
 
                 inputs, labels = inputs.to(self.device), labels.to(self.device)
                 loss1 = BRE()
                 loss1.backward(retain_graph=True)
-                # print("====\nOptimization B1")
-                # print(BRE.sigma_post_.grad)
-                # print(BRE.mean_post.grad)
 
                 loss2 = nnloss(inputs, labels)
                 BRE_loss.append(loss1.item())
@@ -190,31 +187,19 @@ class PacBayes_Optim(PBModule_base):
 
                 self.net.zero_grad()
                 loss2.backward()
-                # print("====\nOptimization B2")
-                # print(BRE.sigma_post_.grad)
-                # print(BRE.mean_post.grad)
                 
                 weights_grad = torch.cat(list(Z.grad.view(-1) for Z in list(nnloss.model.parameters())), dim=0) # pylint: disable=no-member
                 BRE.mean_post.grad += weights_grad
                 BRE.sigma_post_.grad += weights_grad * nnloss.noise
 
-                # print(weights_grad)
-                # print("====\nOptimization B3")
-                # print(BRE.sigma_post_.grad)
-                # print(BRE.mean_post.grad)
-
                 optimizer.step()
                 optimizer.zero_grad()
-                # if i == 3:
-                #     exit()
 
             BRE_losses.append(np.mean(BRE_loss))
             SNN_losses.append(np.mean(SNN_loss))
             KL_value.append(BRE.kl_value)
-            # norm_weights.append(torch.norm(BRE.mean_post.clone().detach(), p=2))
-            # norm_sigma.append(torch.norm(BRE.sigma_post_.clone().detach(), p=2))
-            # norm_lambda.append(torch.Tensor.abs(BRE.lambda_prior_.clone().detach()))
-            print(LOG_INFO.format(epoch, BRE_losses[-1], KL_value[-1], SNN_losses[-1], scheduler.get_last_lr()[0], float(time.time() - st)))
+            
+            print(LOG_INFO.format(epoch, BRE_losses[-1], KL_value[-1], SNN_losses[-1], BRE.lambda_prior_, scheduler.get_last_lr()[0], float(time.time() - st)))
             scheduler.step()
         
         plog("Optimization done. Took {:.4g}s".format(time.time() - t))

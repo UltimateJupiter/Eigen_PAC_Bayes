@@ -167,4 +167,10 @@ class mnnLoss(nn.Module):
         outputs = self.model(images)
         # loss = self.criterion(outputs.float(), labels.long())
         loss = self.criterion.forward(outputs.float(), labels.long())
+        # print(torch.mean(torch.abs(self.sigma_post_)))
+        # print(outputs)
+        # print(torch.sum(self.mean_post ** 2))
+        # print(torch.sum(self.noise ** 2))
+        # print(len(self.mean_post))
+        # exit()
         return loss
