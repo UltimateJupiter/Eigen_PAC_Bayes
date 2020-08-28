@@ -152,6 +152,17 @@ class PacBayesLoss(nn.Module):
         return snn_error
 
 
+class PacBayesLoss_Hessian(PacBayesLoss):
+    def __init__(self, net, mean_prior, lambda_prior_, mean_post, sigma_post_, conf_param, precision, 
+                 bound, data_size, accuracy_loss, device, to_standard):
+        super().__init__(net, mean_prior, lambda_prior_, mean_post, sigma_post_, conf_param, precision, 
+                 bound, data_size, accuracy_loss, device)
+        self.to_standard = to_standard
+    
+    def sample_weights(self):
+        noise = torch.randn(self.d_size).to(self.device) * torch.Tensor.exp(self.sigma_post_)
+        return self.mean_post + self.to_standard(noise)
+        
 
 class mnnLoss(nn.Module):
     """ class for calcuting surrogate loss of the SNN (first term in minimization problem).
@@ -175,9 +186,10 @@ class mnnLoss(nn.Module):
         self.model = model.to(device)
         self.criterion = criterion.to(device)
         self.device = device
+        self.noise = None
     
-    def forward(self, images, labels):
-        self.noise = torch.randn(self.d_size).to(self.device) * torch.Tensor.exp(self.sigma_post_)
+    def forward(self, images, labels, noise):
+        self.noise = noise
         vector_to_parameters(self.mean_post + self.noise, self.model.parameters())
         outputs = self.model(images)
         # loss = self.criterion(outputs.float(), labels.long())
