@@ -8,7 +8,7 @@ sbatchlog/
 .eval_batch*
 
 # Ignore all parameter models
-*.pth
+#*.pth
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
