@@ -86,12 +86,27 @@ class PacBayesLoss(nn.Module):
         snn_error = self.SNN_error(train_loader, delta_prime, n_mtcarlo_approx, sample_freq) 
         final_bound = []
 
-        j_round = torch.Tensor.round(self.precision * (log(self.bound) - (2 * self.lambda_prior_)))
-        lambda_prior_ = 0.5 * (log(self.bound) - (j_round / self.precision)).clone().detach()
+        j_round_up = torch.Tensor.ceil(self.precision * (log(self.bound) - (2 * self.lambda_prior_)))
+        j_round_down = j_round_up - 1
 
-        Bre_loss, kl = calc_BRE_term(self.precision, self.conf_param, self.bound,
-                                 self.mean_prior, self.mean_post, self.lambda_prior_, self.sigma_post_, 
+        lambda_prior_down_ = 0.5 * (log(self.bound) - (j_round_up / self.precision)).clone().detach()
+        lambda_prior_up_ = 0.5 * (log(self.bound) - (j_round_down / self.precision)).clone().detach()
+
+        print("\nLambda_prior optimized: {:.5g}".format(self.lambda_prior_))
+        Bre_loss_up, kl_up = calc_BRE_term(self.precision, self.conf_param, self.bound,
+                                 self.mean_prior, self.mean_post, lambda_prior_up_, self.sigma_post_, 
                                  self.data_size, self.d_size)
+        
+        Bre_loss_down, kl_down = calc_BRE_term(self.precision, self.conf_param, self.bound,
+                                 self.mean_prior, self.mean_post, lambda_prior_down_, self.sigma_post_, 
+                                 self.data_size, self.d_size)
+
+        if Bre_loss_down > Bre_loss_up:
+            Bre_loss, kl = Bre_loss_up, kl_up
+            print("Lambda_prior discreatized: {:.5g}\n".format(lambda_prior_up_))
+        else:
+            Bre_loss, kl = Bre_loss_down, kl_down
+            print("Lambda_prior discreatized: {:.5g}\n".format(lambda_prior_down_))
         
         if torch.cuda.is_available():
             cuda_tensor = Bre_loss.cuda()
