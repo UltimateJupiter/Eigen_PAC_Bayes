@@ -31,6 +31,29 @@ def calc_kullback_leibler(lambda_prior, sigma_post, mean_prior, mean_post, d_siz
 
     return kl
 
+def calc_kl_partial(lambda_prior, sigma_post, mean_prior, mean_post, d_size):
+    """
+    Explicit calculation of KL divergence between prior N(0, lambda_prior * Id) and posterior N(flat_mean_prior, sigma_posterior_)
+    """
+    # print('\nCalling kl')
+    # print("lambda_prior, sigma_post")
+    # print(lambda_prior, sigma_post)
+    # print("lambda_prior, sigma_post - Grad")
+    # print(lambda_prior.grad, sigma_post.grad)
+    tr = torch.norm(torch.exp(2 * sigma_post[:-1]), p=1).add(torch.exp(2* sigma_post[-1])) / lambda_prior # pylint:disable=no-member
+    l2 = torch.Tensor.pow(torch.Tensor.norm(mean_post - mean_prior, p=2), 2) / lambda_prior
+    # print("tr, l2")
+    # print(tr, l2)
+    
+    d = d_size
+    logdet_prior = d * torch.Tensor.log(lambda_prior)
+    logdet_post = 2 * torch.Tensor.sum(sigma_post)
+    kl = (tr + l2 - d + logdet_prior - logdet_post ) / 2.
+    # print("kl")
+    # print(kl)
+
+    return kl
+
 
 def calc_BRE_term(Precision, conf_param, bound, mean_prior, mean_post, lambda_prior_, sigma_posterior_, data_size, d_size): 
     """
@@ -42,6 +65,7 @@ def calc_BRE_term(Precision, conf_param, bound, mean_prior, mean_post, lambda_pr
     log_log = 2 * torch.Tensor.log(Precision * (torch.Tensor.log(bound / lambda_prior)))
     m = data_size
     log_ = log((((pi ** 2) * m) / (6 * conf_param)))
+    #print(kl + log_log + log_)
     bre = torch.Tensor.sqrt((kl + log_log + log_) / (2 * (m - 1)))
     if torch.isnan(bre): # pylint: disable=no-member
         print(lambda_prior, kl, log_log, log_, bre)

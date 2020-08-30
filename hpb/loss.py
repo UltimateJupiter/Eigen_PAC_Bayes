@@ -154,14 +154,14 @@ class PacBayesLoss(nn.Module):
 
 class PacBayesLoss_Hessian(PacBayesLoss):
     def __init__(self, net, mean_prior, lambda_prior_, mean_post, sigma_post_, conf_param, precision, 
-                 bound, data_size, accuracy_loss, device, to_standard):
+                 bound, data_size, accuracy_loss, device, noise_generation):
         super().__init__(net, mean_prior, lambda_prior_, mean_post, sigma_post_, conf_param, precision, 
                  bound, data_size, accuracy_loss, device)
-        self.to_standard = to_standard
+        self.noise_generation = noise_generation
     
     def sample_weights(self):
-        noise = torch.randn(self.d_size).to(self.device) * torch.Tensor.exp(self.sigma_post_)
-        return self.mean_post + self.to_standard(noise)
+        noise_standard, _ = self.noise_generation()
+        return self.mean_post + noise_standard
         
 
 class mnnLoss(nn.Module):

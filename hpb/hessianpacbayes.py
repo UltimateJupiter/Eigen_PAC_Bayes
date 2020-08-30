@@ -209,19 +209,29 @@ class PacBayes_Hessian(PBModule_base):
     def __init__(self, network, datasets, criterion, accuracy_loss):
         super().__init__(network, datasets, criterion, accuracy_loss)
 
-    def load_hessian(self, hessian_path):
+    def load_hessian_file(self, hessian_path):
         print(hessian_path)
         hessian_data = torch.load(hessian_path, map_location=self.device)
         self.eigenvals = hessian_data['eigenvals']
         self.eigenvecs = hessian_data['eigenvecs']
         self.eigenvecs_T = self.eigenvecs.transpose(0,1)
         plog("Hessian loaded from {}".format(1))
+    
+    def load_eigenthings(self, eigenvals, eigenvecs):
+        self.eigenvals = eigenvals.to(self.device)
+        self.eigenvecs = eigenvecs.to(self.device)
+        self.eigenvecs_T = self.eigenvecs.transpose(0,1)
         
     def to_hessian(self, vec):
         return vec.matmul(self.eigenvecs_T)
     
     def to_standard(self, vec):
         return vec.matmul(self.eigenvecs)
+
+    def noise_generation(self):
+        noise_hessian = torch.randn(self.BRE.d_size).to(self.device) * torch.Tensor.exp(self.BRE.sigma_post_)
+        noise_standard = self.to_standard(noise_hessian)
+        return noise_standard, noise_hessian
 
     def initialize_BRE(self,
                        mean_prior,
@@ -231,22 +241,25 @@ class PacBayes_Hessian(PBModule_base):
                        bound=0.1
                        ):
         mean_post = parameters_to_vector(self.net.parameters())
-        sigma_post = torch.log(torch.Tensor.abs(mean_post))
+        sigma_post = torch.log(torch.Tensor.abs(self.to_hessian(mean_post)))
+        print(list(sigma_post.detach().to('cpu').numpy()))
         sigma_post = sigma_post.to(self.device).requires_grad_() # pylint: disable=not-callable
         lambda_prior = torch.tensor(lambda_prior, device=self.device).requires_grad_() # pylint: disable=not-callable
 
         data_size = len(self.datasets[True])
 
-        self.BRE = PacBayesLoss_Hessian(self.net, mean_prior, lambda_prior, mean_post, sigma_post, conf_param, precision, bound, data_size, self.accuracy_loss, self.device, self.to_standard).to(self.device)
+        self.BRE = PacBayesLoss_Hessian(self.net, mean_prior, lambda_prior, mean_post, sigma_post, conf_param, precision, bound, data_size, self.accuracy_loss, self.device, self.noise_generation).to(self.device)
 
     def initialize_BRE_eigenval(self,
                                 mean_prior,
-                                epsilon = 0.01,
+                                epsilon = None,
                                 lambda_prior=-3.,
                                 conf_param=0.025,
                                 precision=100,
                                 bound=0.1
                                 ):
+        if epsilon is None:
+            epsilon = np.exp(2*lambda_prior)
         mean_post = parameters_to_vector(self.net.parameters())
         sigma_post = torch.log(torch.div(epsilon, torch.sqrt(self.eigenvals)))
         sigma_post[sigma_post > 0] = 0
@@ -257,7 +270,7 @@ class PacBayes_Hessian(PBModule_base):
 
         data_size = len(self.datasets[True])
 
-        self.BRE = PacBayesLoss_Hessian(self.net, mean_prior, lambda_prior, mean_post, sigma_post, conf_param, precision, bound, data_size, self.accuracy_loss, self.device, self.to_standard).to(self.device)
+        self.BRE = PacBayesLoss_Hessian(self.net, mean_prior, lambda_prior, mean_post, sigma_post, conf_param, precision, bound, data_size, self.accuracy_loss, self.device, self.noise_generation).to(self.device)
     
     def optimize_PACB_RMSprop(self,
                               learning_rate=0.01,
@@ -318,8 +331,8 @@ class PacBayes_Hessian(PBModule_base):
                 loss1 = BRE()
                 loss1.backward(retain_graph=True)
 
-                noise = torch.randn(BRE.d_size).to(self.device) * torch.Tensor.exp(BRE.sigma_post_)
-                loss2 = nnloss(inputs, labels, self.to_standard(noise))
+                noise_standard, noise_hessian = self.noise_generation()
+                loss2 = nnloss(inputs, labels, noise_standard)
                 BRE_loss.append(loss1.item())
                 SNN_loss.append(loss2.item())
 
@@ -328,7 +341,7 @@ class PacBayes_Hessian(PBModule_base):
                 
                 weights_grad = torch.cat(list(Z.grad.view(-1) for Z in list(nnloss.model.parameters())), dim=0) # pylint: disable=no-member
                 BRE.mean_post.grad += weights_grad
-                BRE.sigma_post_.grad += self.to_hessian(weights_grad) * noise
+                BRE.sigma_post_.grad += self.to_hessian(weights_grad) * noise_hessian
 
                 optimizer.step()
                 optimizer.zero_grad()
@@ -341,3 +354,48 @@ class PacBayes_Hessian(PBModule_base):
             scheduler.step()
         
         plog("Optimization done. Took {:.4g}s".format(time.time() - t))
+
+class PacBayes_Hessian_partial(PacBayes_Hessian):
+    def __init__(self, network, datasets, criterion, accuracy_loss):
+        super().__init__(network, datasets, criterion, accuracy_loss)
+
+    def to_hessian(self, vec):
+        ans = vec.matmul(self.eigenvecs_T)
+        res = vec.sub(ans.matmul(self.eigenvecs))
+        val = res.norm().div_(np.sqrt(vec.shape[0]-ans.shape[0]))
+        return torch.cat((ans, val.unsqueeze(0)))
+    
+    def noise_generation(self):
+        rand_vec = torch.randn(self.BRE.d_size).to(self.device)
+        proj_vec = rand_vec.matmul(self.eigenvecs_T)
+        res_vec = rand_vec.sub(proj_vec.matmul(self.eigenvecs))
+        res_val = res_vec.norm().div_(np.sqrt(rand_vec.shape[0]-proj_vec.shape[0]))
+        noise_hessian = torch.cat((proj_vec, res_val.unsqueeze(0)))
+        #print(list(self.BRE.sigma_post_.detach().to('cpu').numpy()))
+        noise_hessian = noise_hessian.mul_(torch.exp(self.BRE.sigma_post_))
+        noise_standard = noise_hessian[:-1].matmul(self.eigenvecs)
+        noise_standard = noise_standard.add_(res_vec.div(res_val).mul(noise_hessian[-1]))
+        return noise_standard, noise_hessian
+
+    def initialize_BRE_eigenval(self,
+                                mean_prior,
+                                epsilon = None,
+                                lambda_prior=-3.,
+                                conf_param=0.025,
+                                precision=100,
+                                bound=0.1
+                                ):
+        if epsilon is None:
+            epsilon = np.exp(2*lambda_prior)
+        mean_post = parameters_to_vector(self.net.parameters())
+        sigma_post = torch.log(torch.div(epsilon, torch.sqrt(self.eigenvals)))
+        sigma_post[sigma_post > 0] = 0
+        sigma_post[torch.isnan(sigma_post)] = 0
+        sigma_post = torch.cat((sigma_post, torch.Tensor([0]).to(self.device)))
+        print(list(sigma_post.to('cpu').numpy()))
+        sigma_post = sigma_post.to(self.device).requires_grad_() # pylint: disable=not-callable
+        lambda_prior = torch.tensor(lambda_prior, device=self.device).requires_grad_() # pylint: disable=not-callable
+
+        data_size = len(self.datasets[True])
+
+        self.BRE = PacBayesLoss_Hessian(self.net, mean_prior, lambda_prior, mean_post, sigma_post, conf_param, precision, bound, data_size, self.accuracy_loss, self.device, self.noise_generation).to(self.device)

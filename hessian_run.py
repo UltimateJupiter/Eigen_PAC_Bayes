@@ -22,14 +22,14 @@ def main():
     sd_path_sgd_sol, sd_path_init = os.path.join(test_dirc, sd_sgd_sol), os.path.join(test_dirc, sd_init)
     hessian_path = os.path.join(test_dirc, hessian_file)
     HPB = PacBayes_Hessian(net, datasets, criterion_nn, accuracy_loss)
-    HPB.load_hessian(hessian_path)
+    HPB.load_hessian_file(hessian_path)
     HPB.load_sd(sd_path_sgd_sol)
     gap = HPB.generalization_gap()
     print(gap)
     HPB.evaluate(True, True)
 
     mean_prior = HPB.get_prior_mean(sd_path_init)
-    HPB.initialize_BRE_eigenval(mean_prior)
+    HPB.initialize_BRE(mean_prior)
 
     # HPB.optimize_PACB_RMSprop(learning_rate=0.001, epoch_num=3000, lr_decay_mode='step', lr_gamma=0.1, step_lr_decay=1000)
     HPB.optimize_PACB_RMSprop(learning_rate=0.001, epoch_num=400, lr_decay_mode='step', lr_gamma=0.1, step_lr_decay=300)
@@ -37,7 +37,7 @@ def main():
     # exit()
     HPB.compute_bound(n_monte_carlo_approx=1000, sample_freq=100)
     print(list(HPB.BRE.sigma_post_.detach().to('cpu').numpy()))
-    torch.save(HPB.BRE.sigma_post_.detach().to('cpu'), 'hessian_run_eig_1.pth')
+    torch.save(HPB.BRE.sigma_post_.detach().to('cpu'), 'sigma_post/hessian_run_2.pth')
 
 if __name__ == '__main__':
     main()
