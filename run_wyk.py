@@ -11,8 +11,9 @@ test_dirc = '../hessian_eigenspace_overlap/MNIST_Binary/experiments/FC1_600_fixl
 test_dirc = '../hessian_eigenspace_overlap/MNIST_Binary/experiments/FC1_600_sgd0.01m0.9_l1d_pn1_bt100'
 test_dirc = '../hessian_eigenspace_overlap/MNIST_Binary/experiments/FC2_600_sgd0.01m0.9_l1d_01SBCE_bt100'
 test_dirc = '../hessian_eigenspace_overlap/MNIST_Binary/experiments/FC1_600_sgd0.01m0.9_l1d_01SBCE_bt100'
-test_dirc = '../hessian_eigenspace_overlap/MNIST_Binary/experiments/FC1_600_sgd0.01m0.9LS_l1d_pn1_bt100'
+test_dirc = '../hessian_eigenspace_overlap/MNIST_Binary/experiments/FC1_600_sgd0.01m0.9LS_l1d_pic01_labelpn1_bt100'
 test_dirc = '../hessian_eigenspace_overlap/MNIST_TrueBinary/experiments/FC1_20_small_fixlr0.01_pn1'
+#test_dirc = '../hessian_eigenspace_overlap/MNIST_TrueBinary/experiments/FC2_20_small_fixlr0.01_pn1'
 
 def main():
 
@@ -37,12 +38,12 @@ def main():
     HPB.initialize_BRE(mean_prior=mean_prior)
 
     # HPB.optimize_PACB_RMSprop(learning_rate=0.001, epoch_num=3000, lr_decay_mode='step', lr_gamma=0.1, step_lr_decay=1000)
-    HPB.optimize_PACB_RMSprop(learning_rate=0.001, epoch_num=3000, lr_decay_mode='step', lr_gamma=0.1, step_lr_decay=1500)
+    HPB.optimize_PACB_RMSprop(learning_rate=0.001, epoch_num=500, lr_decay_mode='step', lr_gamma=0.1, step_lr_decay=1500)
     # HPB.optimize_PACB_RMSprop(learning_rate=0.01, epoch_num=800, lr_decay_mode='exp', lr_gamma=0.1 ** (1/40))
     # exit()
     HPB.compute_bound(n_monte_carlo_approx=1000, sample_freq=100)
     print(list(HPB.BRE.sigma_post_.detach().to('cpu').numpy()))
-    torch.save(HPB.BRE.sigma_post_.detach().to('cpu'), 'sigma_post/run_2.pth')
+    torch.save(HPB.BRE.sigma_post_.detach().to('cpu'), 'tmp_log/sigma_post/run_5.pth')
 
 if __name__ == '__main__':
     main()

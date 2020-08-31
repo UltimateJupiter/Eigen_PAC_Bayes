@@ -60,6 +60,7 @@ class PacBayesLoss(nn.Module):
         self.bound = bound
         self.data_size = data_size
         self.d_size = mean_post.size()[0]
+        self.calc_BRE_term = calc_BRE_term
         
         self.kl_value = None
         
@@ -69,7 +70,7 @@ class PacBayesLoss(nn.Module):
         plog("BRE initialized")
         
     def forward(self):
-        Bre_loss, kl_value = calc_BRE_term(self.precision, self.conf_param, self.bound,
+        Bre_loss, kl_value = self.calc_BRE_term(self.precision, self.conf_param, self.bound,
                                  self.mean_prior, self.mean_post, self.lambda_prior_, self.sigma_post_, 
                                  self.data_size, self.d_size)
         self.kl_value = kl_value
@@ -93,11 +94,11 @@ class PacBayesLoss(nn.Module):
         lambda_prior_up_ = 0.5 * (log(self.bound) - (j_round_down / self.precision)).clone().detach()
 
         print("\nLambda_prior optimized: {:.5g}".format(self.lambda_prior_))
-        Bre_loss_up, kl_up = calc_BRE_term(self.precision, self.conf_param, self.bound,
+        Bre_loss_up, kl_up = self.calc_BRE_term(self.precision, self.conf_param, self.bound,
                                  self.mean_prior, self.mean_post, lambda_prior_up_, self.sigma_post_, 
                                  self.data_size, self.d_size)
         
-        Bre_loss_down, kl_down = calc_BRE_term(self.precision, self.conf_param, self.bound,
+        Bre_loss_down, kl_down = self.calc_BRE_term(self.precision, self.conf_param, self.bound,
                                  self.mean_prior, self.mean_post, lambda_prior_down_, self.sigma_post_, 
                                  self.data_size, self.d_size)
 
@@ -162,6 +163,13 @@ class PacBayesLoss_Hessian(PacBayesLoss):
     def sample_weights(self):
         noise_standard, _ = self.noise_generation()
         return self.mean_post + noise_standard
+
+class PacBayesLoss_Hessian_partial(PacBayesLoss_Hessian):
+    def __init__(self, net, mean_prior, lambda_prior_, mean_post, sigma_post_, conf_param, precision, 
+                 bound, data_size, accuracy_loss, device, noise_generation):
+        super().__init__(net, mean_prior, lambda_prior_, mean_post, sigma_post_, conf_param, precision, 
+                 bound, data_size, accuracy_loss, device, noise_generation)
+        self.calc_BRE_term = calc_BRE_term_partial
         
 
 class mnnLoss(nn.Module):

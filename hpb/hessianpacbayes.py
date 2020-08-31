@@ -4,7 +4,7 @@ import math
 
 from .dp import *
 from .arithm import *
-from .loss import PacBayesLoss, mnnLoss, PacBayesLoss_Hessian
+from .loss import *
 from .test import eval_model
 from .utils import *
 import copy
@@ -261,7 +261,7 @@ class PacBayes_Hessian(PBModule_base):
         if epsilon is None:
             epsilon = np.exp(2*lambda_prior)
         mean_post = parameters_to_vector(self.net.parameters())
-        sigma_post = torch.log(torch.div(epsilon, torch.sqrt(self.eigenvals)))
+        sigma_post = torch.log(torch.div(epsilon, self.eigenvals.abs().sqrt()))
         sigma_post[sigma_post > 0] = 0
         sigma_post[torch.isnan(sigma_post)] = 0
         print(list(sigma_post.to('cpu').numpy()))
@@ -362,14 +362,14 @@ class PacBayes_Hessian_partial(PacBayes_Hessian):
     def to_hessian(self, vec):
         ans = vec.matmul(self.eigenvecs_T)
         res = vec.sub(ans.matmul(self.eigenvecs))
-        val = res.norm().div_(np.sqrt(vec.shape[0]-ans.shape[0]))
+        val = res.norm().div_(math.sqrt(vec.shape[0]-ans.shape[0]))
         return torch.cat((ans, val.unsqueeze(0)))
     
     def noise_generation(self):
         rand_vec = torch.randn(self.BRE.d_size).to(self.device)
         proj_vec = rand_vec.matmul(self.eigenvecs_T)
         res_vec = rand_vec.sub(proj_vec.matmul(self.eigenvecs))
-        res_val = res_vec.norm().div_(np.sqrt(rand_vec.shape[0]-proj_vec.shape[0]))
+        res_val = res_vec.norm().div_(math.sqrt(rand_vec.shape[0]-proj_vec.shape[0]))
         noise_hessian = torch.cat((proj_vec, res_val.unsqueeze(0)))
         #print(list(self.BRE.sigma_post_.detach().to('cpu').numpy()))
         noise_hessian = noise_hessian.mul_(torch.exp(self.BRE.sigma_post_))
@@ -388,7 +388,7 @@ class PacBayes_Hessian_partial(PacBayes_Hessian):
         if epsilon is None:
             epsilon = np.exp(2*lambda_prior)
         mean_post = parameters_to_vector(self.net.parameters())
-        sigma_post = torch.log(torch.div(epsilon, torch.sqrt(self.eigenvals)))
+        sigma_post = torch.log(torch.div(epsilon, self.eigenvals.abs().sqrt()))
         sigma_post[sigma_post > 0] = 0
         sigma_post[torch.isnan(sigma_post)] = 0
         sigma_post = torch.cat((sigma_post, torch.Tensor([0]).to(self.device)))
@@ -398,4 +398,79 @@ class PacBayes_Hessian_partial(PacBayes_Hessian):
 
         data_size = len(self.datasets[True])
 
-        self.BRE = PacBayesLoss_Hessian(self.net, mean_prior, lambda_prior, mean_post, sigma_post, conf_param, precision, bound, data_size, self.accuracy_loss, self.device, self.noise_generation).to(self.device)
+        self.BRE = PacBayesLoss_Hessian_partial(self.net, mean_prior, lambda_prior, mean_post, sigma_post, conf_param, precision, bound, data_size, self.accuracy_loss, self.device, self.noise_generation).to(self.device)
+    
+class PacBayes_Hessian_approx(PacBayes_Hessian):
+    def __init__(self, network, datasets, criterion, accuracy_loss):
+        super().__init__(network, datasets, criterion, accuracy_loss)
+
+    def load_hessian_file(self, hessian_path):
+        print(hessian_path)
+        hessian_data = torch.load(hessian_path, map_location=self.device)
+        self.layers = hessian_data['layers']
+        self.UTAU_eigenvals = hessian_data['UTAU_eigenvals']
+        self.UTAU_eigenvecs = hessian_data['UTAU_eigenvecs']
+        self.xxT_eigenvals = hessian_data['xxT_eigenvals']
+        self.xxT_eigenvecs = hessian_data['xxT_eigenvecs']
+        self.eigenvals = []
+        self.UTAU_eigenvecs_T = {}
+        self.xxT_eigenvecs_T = {}
+        self.UTAU_d = {}
+        self.xxT_d = {}
+        for layer in self.layers:
+            self.eigenvals.append(self.UTAU_eigenvals[layer].ger(self.xxT_eigenvals[layer]).reshape(-1))
+            self.eigenvals.append(self.UTAU_eigenvals[layer])
+            self.UTAU_eigenvecs_T[layer] = self.UTAU_eigenvecs[layer].t()
+            self.xxT_eigenvecs_T[layer] = self.xxT_eigenvecs[layer].t()
+            self.UTAU_d[layer] = self.UTAU_eigenvecs[layer].shape[1]
+            self.xxT_d[layer] = self.xxT_eigenvecs[layer].shape[1]
+        self.eigenvals = torch.cat(self.eigenvals)
+        plog("Hessian loaded from {}".format(1))
+    
+    def load_eigenthings(self, layers, UTAU_eigenvals, UTAU_eigenvecs, xxT_eigenvals, xxT_eigenvecs):
+        self.layers = layers
+        self.UTAU_eigenvals = UTAU_eigenvals.to(self.device)
+        self.UTAU_eigenvecs = UTAU_eigenvecs.to(self.device)
+        self.xxT_eigenvals = xxT_eigenvals.to(self.device)
+        self.xxT_eigenvecs = xxT_eigenvecs.to(self.device)
+        self.eigenvals = []
+        self.UTAU_eigenvecs_T = {}
+        self.xxT_eigenvecs_T = {}
+        self.UTAU_d = {}
+        self.xxT_d = {}
+        for layer in self.layers:
+            self.eigenvals.append(self.UTAU_eigenvals[layer].ger(self.xxT_eigenvals[layer]).reshape(-1))
+            self.eigenvals.append(self.UTAU_eigenvals[layer])
+            self.UTAU_eigenvecs_T[layer] = self.UTAU_eigenvecs[layer].t()
+            self.xxT_eigenvecs_T[layer] = self.xxT_eigenvecs[layer].t()
+            self.UTAU_d[layer] = self.UTAU_eigenvecs[layer].shape[1]
+            self.xxT_d[layer] = self.xxT_eigenvecs[layer].shape[1]
+        self.eigenvals = torch.cat(self.eigenvals)
+
+    def to_hessian(self, vec):
+        ans = []
+        s = 0
+        for layer in self.layers:
+            e = s + self.UTAU_d[layer] * self.xxT_d[layer]
+            vec_mat = vec[s:e].reshape(self.UTAU_d[layer], self.xxT_d[layer])
+            ans_mat = self.UTAU_eigenvecs[layer].matmul(vec_mat).matmul(self.xxT_eigenvecs_T[layer])
+            ans.append(ans_mat.reshape(-1))
+            s = e
+            e = s + self.UTAU_d[layer]
+            ans.append(vec[s:e].matmul(self.UTAU_eigenvecs_T[layer]))
+            s = e
+        return torch.cat(ans)
+    
+    def to_standard(self, vec):
+        ans = []
+        s = 0
+        for layer in self.layers:
+            e = s + self.UTAU_d[layer] * self.xxT_d[layer]
+            vec_mat = vec[s:e].reshape(self.UTAU_d[layer], self.xxT_d[layer])
+            ans_mat = self.UTAU_eigenvecs_T[layer].matmul(vec_mat).matmul(self.xxT_eigenvecs[layer])
+            ans.append(ans_mat.reshape(-1))
+            s = e
+            e = s + self.UTAU_d[layer]
+            ans.append(vec[s:e].matmul(self.UTAU_eigenvecs[layer]))
+            s = e
+        return torch.cat(ans)

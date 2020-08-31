@@ -17,14 +17,15 @@ def calc_kullback_leibler(lambda_prior, sigma_post, mean_prior, mean_post, d_siz
     # print(lambda_prior, sigma_post)
     # print("lambda_prior, sigma_post - Grad")
     # print(lambda_prior.grad, sigma_post.grad)
-    tr = torch.Tensor.norm(torch.Tensor.exp(2 * sigma_post), p=1) / lambda_prior # pylint:disable=no-member
-    l2 = torch.Tensor.pow(torch.Tensor.norm(mean_post - mean_prior, p=2), 2) / lambda_prior
+    tr = torch.sum(torch.exp(2 * sigma_post)) / lambda_prior # pylint:disable=no-member
+    mean_diff = mean_post - mean_prior
+    l2 = torch.dot(mean_diff, mean_diff) / lambda_prior
     # print("tr, l2")
     # print(tr, l2)
     
     d = d_size
-    logdet_prior = d * torch.Tensor.log(lambda_prior)
-    logdet_post = 2 * torch.Tensor.sum(sigma_post)
+    logdet_prior = d * torch.log(lambda_prior)
+    logdet_post = 2 * torch.sum(sigma_post)
     kl = (tr + l2 - d + logdet_prior - logdet_post ) / 2.
     # print("kl")
     # print(kl)
@@ -40,14 +41,17 @@ def calc_kl_partial(lambda_prior, sigma_post, mean_prior, mean_post, d_size):
     # print(lambda_prior, sigma_post)
     # print("lambda_prior, sigma_post - Grad")
     # print(lambda_prior.grad, sigma_post.grad)
-    tr = torch.norm(torch.exp(2 * sigma_post[:-1]), p=1).add(torch.exp(2* sigma_post[-1])) / lambda_prior # pylint:disable=no-member
-    l2 = torch.Tensor.pow(torch.Tensor.norm(mean_post - mean_prior, p=2), 2) / lambda_prior
+    d = d_size
+    res_d = d - sigma_post.shape[0] + 1
+    tr = torch.sum(torch.exp(2 * sigma_post[:-1])).add(res_d * torch.exp(2*sigma_post[-1])) / lambda_prior # pylint:disable=no-member
+    mean_diff = mean_post - mean_prior
+    l2 = torch.dot(mean_diff, mean_diff) / lambda_prior
     # print("tr, l2")
     # print(tr, l2)
     
-    d = d_size
-    logdet_prior = d * torch.Tensor.log(lambda_prior)
-    logdet_post = 2 * torch.Tensor.sum(sigma_post)
+   
+    logdet_prior = d * torch.log(lambda_prior)
+    logdet_post = 2 * (torch.sum(sigma_post[:-1]) + res_d * sigma_post[-1])
     kl = (tr + l2 - d + logdet_prior - logdet_post ) / 2.
     # print("kl")
     # print(kl)
@@ -62,6 +66,23 @@ def calc_BRE_term(Precision, conf_param, bound, mean_prior, mean_post, lambda_pr
 
     lambda_prior = torch.Tensor.clamp(torch.Tensor.exp(2 * lambda_prior_ ), min = 1e-38, max = bound - 1e-8)
     kl = calc_kullback_leibler(lambda_prior, sigma_posterior_, mean_prior, mean_post, d_size)
+    log_log = 2 * torch.Tensor.log(Precision * (torch.Tensor.log(bound / lambda_prior)))
+    m = data_size
+    log_ = log((((pi ** 2) * m) / (6 * conf_param)))
+    #print(kl + log_log + log_)
+    bre = torch.Tensor.sqrt((kl + log_log + log_) / (2 * (m - 1)))
+    if torch.isnan(bre): # pylint: disable=no-member
+        print(lambda_prior, kl, log_log, log_, bre)
+        exit()
+    return bre, kl
+
+def calc_BRE_term_partial(Precision, conf_param, bound, mean_prior, mean_post, lambda_prior_, sigma_posterior_, data_size, d_size): 
+    """
+    Explicit Calculation of the second term of the optimization problem (BRE)
+    """
+
+    lambda_prior = torch.Tensor.clamp(torch.Tensor.exp(2 * lambda_prior_ ), min = 1e-38, max = bound - 1e-8)
+    kl = calc_kl_partial(lambda_prior, sigma_posterior_, mean_prior, mean_post, d_size)
     log_log = 2 * torch.Tensor.log(Precision * (torch.Tensor.log(bound / lambda_prior)))
     m = data_size
     log_ = log((((pi ** 2) * m) / (6 * conf_param)))

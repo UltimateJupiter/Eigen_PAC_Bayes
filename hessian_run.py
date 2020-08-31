@@ -4,9 +4,9 @@ from hpb.hessianpacbayes import *
 
 sd_sgd_sol = 'experiment_log/run_1/models/final.pth'
 sd_init = 'experiment_log/run_1/models/epoch0.pth'
-hessian_file = 'experiment_log/run_1/MNIST_TrueBinary_FC1_20_small_fixlr0.01_pn1_E-1_full_hessian.eval'
+hessian_file = 'experiment_log/run_1/MNIST_TrueBinary_FC2_20_small_fixlr0.01_pn1_E-1_full_hessian.eval'
 
-test_dirc = '../hessian_eigenspace_overlap/MNIST_TrueBinary/experiments/FC1_20_small_fixlr0.01_pn1'
+test_dirc = '../hessian_eigenspace_overlap/MNIST_TrueBinary/experiments/FC2_20_small_fixlr0.01_pn1'
 
 def main():
 
@@ -32,12 +32,12 @@ def main():
     HPB.initialize_BRE(mean_prior)
 
     # HPB.optimize_PACB_RMSprop(learning_rate=0.001, epoch_num=3000, lr_decay_mode='step', lr_gamma=0.1, step_lr_decay=1000)
-    HPB.optimize_PACB_RMSprop(learning_rate=0.001, epoch_num=400, lr_decay_mode='step', lr_gamma=0.1, step_lr_decay=300)
+    HPB.optimize_PACB_RMSprop(learning_rate=0.001, epoch_num=500, lr_decay_mode='step', lr_gamma=0.1, step_lr_decay=300)
     # HPB.optimize_PACB_RMSprop(learning_rate=0.01, epoch_num=800, lr_decay_mode='exp', lr_gamma=0.1 ** (1/40))
     # exit()
     HPB.compute_bound(n_monte_carlo_approx=1000, sample_freq=100)
     print(list(HPB.BRE.sigma_post_.detach().to('cpu').numpy()))
-    torch.save(HPB.BRE.sigma_post_.detach().to('cpu'), 'sigma_post/hessian_run_2.pth')
+    torch.save(HPB.BRE.sigma_post_.detach().to('cpu'), 'tmp_log/sigma_post/hessian_run_2.pth')
 
 if __name__ == '__main__':
     main()
