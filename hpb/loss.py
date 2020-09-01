@@ -142,10 +142,11 @@ class PacBayesLoss(nn.Module):
                 samples_errors += test_error(self.model, loader, self.accuracy_loss, self.device)
                 if i == iter_counter:
                     snn_error_intermed = solve_kl_sup(samples_errors/i, (log(2/delta_prime)/i))
-                    plog("Iter {}; SNN error {:.4g}".format(i, snn_error_intermed))
+                    plog("Iter {}; SNN error {:.4g}; Took {:.4g}s".format(i, snn_error_intermed, time.time()-t))
                     snn_error.append(snn_error_intermed)
                     # print("Computational time for {} is {}".format(i, time.time() - t))
                     iter_counter += sample_freq#00
+                    t = time.time()
 
         snn_final_error = solve_kl_sup(samples_errors/n_mtcarlo_approx, (log(2/delta_prime)/n_mtcarlo_approx))
         snn_error.append(snn_final_error)

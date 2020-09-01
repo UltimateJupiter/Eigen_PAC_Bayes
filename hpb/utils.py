@@ -37,7 +37,7 @@ def prepare_net(net, use_gpu=True):
 
 def plog(info, print_log=True):
     if print_log:
-        print("[{}]  {}".format(datetime.datetime.now(), info))
+        print("[{}]  {}".format(datetime.datetime.now(), info), flush=True)
 
 def get_tensor_size(tensor):
     return tensor.element_size() * tensor.nelement()

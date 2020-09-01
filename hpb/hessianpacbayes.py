@@ -63,10 +63,12 @@ class PBModule_base():
                       delta_prime=0.01,
                       sample_freq=10):
         print("Using {} iteration Monte Carlo approx, delta'={}".format(n_monte_carlo_approx, delta_prime))
+        t = time.time()
         snn_train_error, Pac_bound, kl = self.BRE.compute_bound(self.dataloaders[True], delta_prime, n_monte_carlo_approx, sample_freq)
         print(snn_train_error)
         print(Pac_bound)
         print('\nFinal PAC Bayes Bound: {:.4g};\nFinal SNN error: {:.4g};\nFinal KL Divergence: {:.5g}'.format(Pac_bound[-1], snn_train_error[-1], kl.item()))
+        plog("Compute Bound Done. Took {:.4g}s".format(time.time() - t))
 
     def get_sd(self, out_device=None):
         if out_device is None:
@@ -200,7 +202,7 @@ class PacBayes_Optim(PBModule_base):
             SNN_losses.append(np.mean(SNN_loss))
             KL_value.append(BRE.kl_value)
             
-            print(LOG_INFO.format(epoch, BRE_losses[-1], KL_value[-1], SNN_losses[-1], BRE.lambda_prior_, scheduler.get_last_lr()[0], float(time.time() - st)))
+            print(LOG_INFO.format(epoch, BRE_losses[-1], KL_value[-1], SNN_losses[-1], BRE.lambda_prior_, scheduler.get_last_lr()[0], float(time.time() - st)), flush=True)
             scheduler.step()
         
         plog("Optimization done. Took {:.4g}s".format(time.time() - t))
@@ -242,7 +244,7 @@ class PacBayes_Hessian(PBModule_base):
                        ):
         mean_post = parameters_to_vector(self.net.parameters())
         sigma_post = torch.log(torch.Tensor.abs(self.to_hessian(mean_post)))
-        print(list(sigma_post.detach().to('cpu').numpy()))
+        #print(list(sigma_post.detach().to('cpu').numpy()))
         sigma_post = sigma_post.to(self.device).requires_grad_() # pylint: disable=not-callable
         lambda_prior = torch.tensor(lambda_prior, device=self.device).requires_grad_() # pylint: disable=not-callable
 
@@ -264,7 +266,7 @@ class PacBayes_Hessian(PBModule_base):
         sigma_post = torch.log(torch.div(epsilon, self.eigenvals.abs().sqrt()))
         sigma_post[sigma_post > 0] = 0
         sigma_post[torch.isnan(sigma_post)] = 0
-        print(list(sigma_post.to('cpu').numpy()))
+        #print(list(sigma_post.to('cpu').numpy()))
         sigma_post = sigma_post.to(self.device).requires_grad_() # pylint: disable=not-callable
         lambda_prior = torch.tensor(lambda_prior, device=self.device).requires_grad_() # pylint: disable=not-callable
 
@@ -350,7 +352,7 @@ class PacBayes_Hessian(PBModule_base):
             SNN_losses.append(np.mean(SNN_loss))
             KL_value.append(BRE.kl_value)
             
-            print(LOG_INFO.format(epoch, BRE_losses[-1], KL_value[-1], SNN_losses[-1], BRE.lambda_prior_, scheduler.get_last_lr()[0], float(time.time() - st)))
+            print(LOG_INFO.format(epoch, BRE_losses[-1], KL_value[-1], SNN_losses[-1], BRE.lambda_prior_, scheduler.get_last_lr()[0], float(time.time() - st)), flush=True)
             scheduler.step()
         
         plog("Optimization done. Took {:.4g}s".format(time.time() - t))
@@ -392,7 +394,7 @@ class PacBayes_Hessian_partial(PacBayes_Hessian):
         sigma_post[sigma_post > 0] = 0
         sigma_post[torch.isnan(sigma_post)] = 0
         sigma_post = torch.cat((sigma_post, torch.Tensor([0]).to(self.device)))
-        print(list(sigma_post.to('cpu').numpy()))
+        #print(list(sigma_post.to('cpu').numpy()))
         sigma_post = sigma_post.to(self.device).requires_grad_() # pylint: disable=not-callable
         lambda_prior = torch.tensor(lambda_prior, device=self.device).requires_grad_() # pylint: disable=not-callable
 
@@ -400,6 +402,57 @@ class PacBayes_Hessian_partial(PacBayes_Hessian):
 
         self.BRE = PacBayesLoss_Hessian_partial(self.net, mean_prior, lambda_prior, mean_post, sigma_post, conf_param, precision, bound, data_size, self.accuracy_loss, self.device, self.noise_generation).to(self.device)
     
+class PacBayes_Hessian_layerwise(PacBayes_Hessian):
+    def __init__(self, network, datasets, criterion, accuracy_loss):
+        super().__init__(network, datasets, criterion, accuracy_loss)
+
+    def load_hessian_file(self, hessian_path):
+        print(hessian_path)
+        hessian_data = torch.load(hessian_path, map_location=self.device)
+        self.layers = hessian_data['layers']
+        self.H_eigenvals = hessian_data['H_eigenvals']
+        self.H_eigenvecs = hessian_data['H_eigenvecs']
+        self.UTAU_eigenvals = hessian_data['UTAU_eigenvals']
+        self.UTAU_eigenvecs = hessian_data['UTAU_eigenvecs']
+        self.eigenvals = []
+        self.H_eigenvecs_T = {}
+        self.UTAU_eigenvecs_T = {}
+        self.H_d = {}
+        self.UTAU_d = {}
+        for layer in self.layers:
+            self.eigenvals.append(self.H_eigenvals[layer])
+            self.eigenvals.append(self.UTAU_eigenvals[layer])
+            self.H_eigenvecs_T[layer] = self.H_eigenvecs[layer].t()
+            self.UTAU_eigenvecs_T[layer] = self.UTAU_eigenvecs[layer].t()
+            self.H_d[layer] = self.H_eigenvecs[layer].shape[1]
+            self.UTAU_d[layer] = self.UTAU_eigenvecs[layer].shape[1]
+        self.eigenvals = torch.cat(self.eigenvals)
+        plog("Hessian loaded from {}".format(1))
+
+    def to_hessian(self, vec):
+        ans = []
+        s = 0
+        for layer in self.layers:
+            e = s + self.H_d[layer]
+            ans.append(vec[s:e].matmul(self.H_eigenvecs_T[layer]))
+            s = e
+            e = s + self.UTAU_d[layer]
+            ans.append(vec[s:e].matmul(self.UTAU_eigenvecs_T[layer]))
+            s = e
+        return torch.cat(ans)
+    
+    def to_standard(self, vec):
+        ans = []
+        s = 0
+        for layer in self.layers:
+            e = s + self.H_d[layer]
+            ans.append(vec[s:e].matmul(self.H_eigenvecs[layer]))
+            s = e
+            e = s + self.UTAU_d[layer]
+            ans.append(vec[s:e].matmul(self.UTAU_eigenvecs[layer]))
+            s = e
+        return torch.cat(ans)
+
 class PacBayes_Hessian_approx(PacBayes_Hessian):
     def __init__(self, network, datasets, criterion, accuracy_loss):
         super().__init__(network, datasets, criterion, accuracy_loss)
@@ -412,6 +465,7 @@ class PacBayes_Hessian_approx(PacBayes_Hessian):
         self.UTAU_eigenvecs = hessian_data['UTAU_eigenvecs']
         self.xxT_eigenvals = hessian_data['xxT_eigenvals']
         self.xxT_eigenvecs = hessian_data['xxT_eigenvecs']
+        self.norms = hessian_data['norms']
         self.eigenvals = []
         self.UTAU_eigenvecs_T = {}
         self.xxT_eigenvecs_T = {}
@@ -427,18 +481,24 @@ class PacBayes_Hessian_approx(PacBayes_Hessian):
         self.eigenvals = torch.cat(self.eigenvals)
         plog("Hessian loaded from {}".format(1))
     
-    def load_eigenthings(self, layers, UTAU_eigenvals, UTAU_eigenvecs, xxT_eigenvals, xxT_eigenvecs):
+    def load_eigenthings(self, layers, UTAU_eigenvals, UTAU_eigenvecs, xxT_eigenvals, xxT_eigenvecs, norms):
         self.layers = layers
-        self.UTAU_eigenvals = UTAU_eigenvals.to(self.device)
-        self.UTAU_eigenvecs = UTAU_eigenvecs.to(self.device)
-        self.xxT_eigenvals = xxT_eigenvals.to(self.device)
-        self.xxT_eigenvecs = xxT_eigenvecs.to(self.device)
+        self.UTAU_eigenvals = {}
+        self.UTAU_eigenvecs = {}
+        self.xxT_eigenvals = {}
+        self.xxT_eigenvecs = {}
+        self.norms = {}
         self.eigenvals = []
         self.UTAU_eigenvecs_T = {}
         self.xxT_eigenvecs_T = {}
         self.UTAU_d = {}
         self.xxT_d = {}
         for layer in self.layers:
+            self.UTAU_eigenvals[layer] = UTAU_eigenvals[layer].to(self.device)
+            self.UTAU_eigenvecs[layer] = UTAU_eigenvecs[layer].to(self.device)
+            self.xxT_eigenvals[layer] = xxT_eigenvals[layer].to(self.device)
+            self.xxT_eigenvecs[layer] = xxT_eigenvecs[layer].to(self.device)
+            self.norms[layer] = norms[layer].to(self.device)
             self.eigenvals.append(self.UTAU_eigenvals[layer].ger(self.xxT_eigenvals[layer]).reshape(-1))
             self.eigenvals.append(self.UTAU_eigenvals[layer])
             self.UTAU_eigenvecs_T[layer] = self.UTAU_eigenvecs[layer].t()
@@ -454,7 +514,7 @@ class PacBayes_Hessian_approx(PacBayes_Hessian):
             e = s + self.UTAU_d[layer] * self.xxT_d[layer]
             vec_mat = vec[s:e].reshape(self.UTAU_d[layer], self.xxT_d[layer])
             ans_mat = self.UTAU_eigenvecs[layer].matmul(vec_mat).matmul(self.xxT_eigenvecs_T[layer])
-            ans.append(ans_mat.reshape(-1))
+            ans.append(ans_mat.reshape(-1).div_(self.norms[layer]))
             s = e
             e = s + self.UTAU_d[layer]
             ans.append(vec[s:e].matmul(self.UTAU_eigenvecs_T[layer]))
@@ -466,7 +526,7 @@ class PacBayes_Hessian_approx(PacBayes_Hessian):
         s = 0
         for layer in self.layers:
             e = s + self.UTAU_d[layer] * self.xxT_d[layer]
-            vec_mat = vec[s:e].reshape(self.UTAU_d[layer], self.xxT_d[layer])
+            vec_mat = vec[s:e].mul(self.norms[layer]).reshape(self.UTAU_d[layer], self.xxT_d[layer])
             ans_mat = self.UTAU_eigenvecs_T[layer].matmul(vec_mat).matmul(self.xxT_eigenvecs[layer])
             ans.append(ans_mat.reshape(-1))
             s = e
