@@ -166,7 +166,7 @@ class PacBayes_Optim(PBModule_base):
             scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=lr_gamma**(1 / 10), last_epoch=-1)
 
         t = time.time()
-        BRE_losses, KL_value, SNN_losses, norm_weights, norm_sigma, norm_lambda = (list() for i in range(6))
+        #BRE_losses, KL_value, SNN_losses, norm_weights, norm_sigma, norm_lambda = (list() for i in range(6))
         
         print("\nStarting PAC-Bayes bound optimization - RMSprop")
         train_info = "\nEpochs {}\ninitial_lr: {:.3g}\nlr_decay_alpha: {:.3g}\nlr_decay_mode: {}\nbatchsize: {}\n"
@@ -198,11 +198,12 @@ class PacBayes_Optim(PBModule_base):
                 optimizer.step()
                 optimizer.zero_grad()
 
-            BRE_losses.append(np.mean(BRE_loss))
-            SNN_losses.append(np.mean(SNN_loss))
-            KL_value.append(BRE.kl_value)
+            #BRE_losses.append(np.mean(BRE_loss))
+            #SNN_losses.append(np.mean(SNN_loss))
+            #KL_value.append(BRE.kl_value)
             
-            print(LOG_INFO.format(epoch, BRE_losses[-1], KL_value[-1], SNN_losses[-1], BRE.lambda_prior_, scheduler.get_last_lr()[0], float(time.time() - st)), flush=True)
+            #print(LOG_INFO.format(epoch, BRE_losses[-1], KL_value[-1], SNN_losses[-1], BRE.lambda_prior_, scheduler.get_last_lr()[0], float(time.time() - st)), flush=True)
+            print(LOG_INFO.format(epoch, np.mean(BRE_loss), BRE.kl_value, np.mean(SNN_loss), BRE.lambda_prior_, scheduler.get_last_lr()[0], float(time.time() - st)), flush=True)
             scheduler.step()
         
         plog("Optimization done. Took {:.4g}s".format(time.time() - t))
@@ -316,7 +317,7 @@ class PacBayes_Hessian(PBModule_base):
             scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=lr_gamma**(1 / 10), last_epoch=-1)
 
         t = time.time()
-        BRE_losses, KL_value, SNN_losses, norm_weights, norm_sigma, norm_lambda = (list() for i in range(6))
+        #BRE_losses, KL_value, SNN_losses, norm_weights, norm_sigma, norm_lambda = (list() for i in range(6))
         
         print("\nStarting PAC-Bayes bound optimization - RMSprop")
         train_info = "\nEpochs {}\ninitial_lr: {:.3g}\nlr_decay_alpha: {:.3g}\nlr_decay_mode: {}\nbatchsize: {}\n"
@@ -348,11 +349,12 @@ class PacBayes_Hessian(PBModule_base):
                 optimizer.step()
                 optimizer.zero_grad()
 
-            BRE_losses.append(np.mean(BRE_loss))
-            SNN_losses.append(np.mean(SNN_loss))
-            KL_value.append(BRE.kl_value)
+            #BRE_losses.append(np.mean(BRE_loss))
+            #SNN_losses.append(np.mean(SNN_loss))
+            #KL_value.append(BRE.kl_value)
             
-            print(LOG_INFO.format(epoch, BRE_losses[-1], KL_value[-1], SNN_losses[-1], BRE.lambda_prior_, scheduler.get_last_lr()[0], float(time.time() - st)), flush=True)
+            #print(LOG_INFO.format(epoch, BRE_losses[-1], KL_value[-1], SNN_losses[-1], BRE.lambda_prior_, scheduler.get_last_lr()[0], float(time.time() - st)), flush=True)
+            print(LOG_INFO.format(epoch, np.mean(BRE_loss), BRE.kl_value, np.mean(SNN_loss), BRE.lambda_prior_, scheduler.get_last_lr()[0], float(time.time() - st)), flush=True)
             scheduler.step()
         
         plog("Optimization done. Took {:.4g}s".format(time.time() - t))

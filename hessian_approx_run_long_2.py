@@ -38,7 +38,7 @@ def main():
     HPB.optimize_PACB_RMSprop(learning_rate=0.001, epoch_num=2000, lr_decay_mode='step', lr_gamma=0.1, step_lr_decay=400)
     # HPB.optimize_PACB_RMSprop(learning_rate=0.01, epoch_num=800, lr_decay_mode='exp', lr_gamma=0.1 ** (1/40))
     # exit()
-    HPB.compute_bound(n_monte_carlo_approx=30000, sample_freq=100)
+    HPB.compute_bound(n_monte_carlo_approx=150000, sample_freq=100)
     #print(list(HPB.BRE.sigma_post_.detach().to('cpu').numpy()))
     torch.save(HPB.BRE.sigma_post_.detach().to('cpu'), save_path)
 
