@@ -4,7 +4,7 @@ from hpb.hessianpacbayes import *
 
 sd_sgd_sol = 'experiment_log/run_1/models/final.pth'
 sd_init = 'experiment_log/run_1/models/epoch0.pth'
-save_path = 'tmp_log/sigma_post/run_FC2_600_3.pth'
+save_path = 'tmp_log/sigma_post/run_FC2_600_5.pth'
 # test_dirc = '../hessian_eigenspace_overlap/CIFAR10_Exp1/experiments/LeNet5_fixlr0.01'
 # test_dirc = '../hessian_eigenspace_overlap/MNIST_Exp1/experiments/FC2_fixlr0.01'
 test_dirc = '../hessian_eigenspace_overlap/MNIST_Binary/experiments/FC1_600_fixlr0.01_RL'
@@ -38,10 +38,10 @@ def main():
     HPB.initialize_BRE(mean_prior=mean_prior)
 
     # HPB.optimize_PACB_RMSprop(learning_rate=0.001, epoch_num=3000, lr_decay_mode='step', lr_gamma=0.1, step_lr_decay=1000)
-    HPB.optimize_PACB_RMSprop(learning_rate=0.001, epoch_num=1200, lr_decay_mode='step', lr_gamma=0.1, step_lr_decay=600)
+    HPB.optimize_PACB_RMSprop(learning_rate=0.001, epoch_num=2000, lr_decay_mode='step', lr_gamma=0.1, step_lr_decay=400)
     # HPB.optimize_PACB_RMSprop(learning_rate=0.01, epoch_num=800, lr_decay_mode='exp', lr_gamma=0.1 ** (1/40))
     # exit()
-    HPB.compute_bound(n_monte_carlo_approx=15000, sample_freq=100)
+    HPB.compute_bound(n_monte_carlo_approx=30000, sample_freq=100)
     #print(list(HPB.BRE.sigma_post_.detach().to('cpu').numpy()))
     torch.save(HPB.BRE.sigma_post_.detach().to('cpu'), save_path)
 
