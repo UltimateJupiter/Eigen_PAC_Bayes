@@ -1,6 +1,7 @@
 import torch
 import pynvml
 import math
+from copy import deepcopy
 from torch.utils.data import DataLoader
 from .utils import *
 from queue import Queue
@@ -8,37 +9,60 @@ from queue import Queue
 
 class OnDeviceDataLoader():
 
-    def __init__(self, dataset, batch_size, device='cpu', shuffle=False, num_workers=4, **kwargs):
+    def __init__(self, dataset, batchsize, device='cpu', shuffle=False, num_workers=4, remain_labels=None, ds_crop=1, **kwargs):
         self.ds = dataset
         self.device = device
-        self.batchsize = batch_size
+        self.batchsize = batchsize
         self.shuffle = shuffle
+        self.remain_labels = remain_labels
+        self.ds_crop = 1
         self.mem_approx()
+
+        self.inds_raw, self.inps_raw, self.labels_raw = self.load_data()
+        self.inds, self.labels, self.inps = self.set_dscrop(ds_crop)
 
         self.batch_inds = self.batch_inds_sep()
         self.batch_inds_q = Queue()
-        self.inds, self.inps, self.labels, self.ds_size = self.load_data()
-        self.batch_count = math.ceil(self.ds_size / self.batchsize)
-        plog('On-Device dataset initialized')
+
+        self.batch_count = math.ceil(self.ds_size() / self.batchsize)
+        log('On-Device dataset initialized')
     
     def mem_approx(self):
         sample_dl = DataLoader(self.ds, batch_size=1)
         batch_input, batch_label = iter(sample_dl).next()
         sample_size = get_tensor_size(batch_input) + get_tensor_size(batch_label)
         gig_size = sample_size * len(self.ds) / (2 ** 30)
-        plog('Dataset size in memory: {:.4g}G'.format(gig_size))
+        log('Dataset size in memory: {:.4g}G'.format(gig_size))
         return gig_size
 
     def set_batchsize(self, batchsize=100):
         self.batchsize = batchsize
         self.batch_inds = self.batch_inds_sep()
         self.batch_inds_q = Queue()
-        self.batch_count = math.ceil(self.ds_size / self.batchsize)
-        plog("Modified batchsize to {}".format(self.batchsize))
+        self.batch_count = math.ceil(self.ds_size() / self.batchsize)
+        log("Modified batchsize to {}".format(self.batchsize))
         return
+    
+    def set_dscrop(self, ds_crop=1):
+
+        if ds_crop == 1:
+            return self.inds_raw, self.labels_raw, self.inps_raw
+        
+        assert ds_crop > 0 and ds_crop < 1
+        ds_crop_ind = int(len(self.labels_raw) * ds_crop)
+        
+        inds = deepcopy(self.inds_raw[:ds_crop_ind])
+        labels = self.labels_raw[:ds_crop_ind]
+        inps = self.inps_raw[:ds_crop_ind]
+        log("setting dscrop to {}".format(ds_crop))
+
+        return inds, labels, inps
     
     def __len__(self):
         return self.batch_count
+
+    def ds_size(self):
+        return len(self.inps)
 
     def load_data(self):
         sample_dl = DataLoader(self.ds, batch_size=2048, num_workers=4)
@@ -49,20 +73,27 @@ class OnDeviceDataLoader():
             labels_stack.append(label.to(self.device))
         
         inps, labels = torch.cat(inps_stack), torch.cat(labels_stack) # pylint: disable=no-member
-        ds_size = len(inps)
-        return inds, inps, labels, ds_size
+        return inds, inps, labels
 
     def batch_inds_sep(self):
         batch_inds = []
-        for i in np.arange(0, len(self.ds) - 1, self.batchsize):
+        for i in np.arange(0, self.ds_size(), self.batchsize):
             batch_inds.append([i, i + self.batchsize])
-        batch_inds[-1][-1] = len(self.ds) - 1
+        batch_inds[-1][-1] = self.ds_size()
         return batch_inds
     
     def init_batch_inds_q(self):
         self.batch_inds_q = Queue()
         for x in self.batch_inds:
             self.batch_inds_q.put(x)
+    
+    def set_remain_labels(self, remain_labels):
+        self.remain_labels = remain_labels
+        return
+    
+    def reset_remain_labels(self):
+        self.remain_labels = None
+        return
     
     def __next__(self):
         if self.batch_inds_q.empty():
@@ -71,7 +102,11 @@ class OnDeviceDataLoader():
         batch_inds = list(range(batch_marks[0], batch_marks[1]))
         inp = self.inps[self.inds[batch_inds]]
         labels = self.labels[self.inds[batch_inds]]
-        return [inp, labels]
+
+        data = [inp, labels]
+        if self.remain_labels is not None:
+            data = filter_label(data, self.remain_labels)
+        return data
     
     def __iter__(self):
         self.init_batch_inds_q()
@@ -100,7 +135,7 @@ class DataLoader_filtered():
     def reset_remain_labels(self):
         self.remain_labels = None
         return
-    
+
     def __next__(self):
         if self.remain_labels is None:
             return self.dl_iter.next()
@@ -125,7 +160,7 @@ class HDC_iterator():
         self.device = device
         self.out_device = out_device
         self.comp_layers = comp_layers
-        plog('HDC {} initialized with batchsize {}'.format(sample_func.__name__, dataloader.batch_size))
+        log('HDC {} initialized with batchsize {}'.format(sample_func.__name__, dataloader.batch_size))
         self.batch_count = self.dl.batch_count
         self.report_inds = list(range(1, self.batch_count, max(1, int(self.batch_count/10))))
 
@@ -156,7 +191,7 @@ def crop_dataset(dataset, crop=1, seed=0):
 
 def sample_input(dataset, count=1, remain_labels=None):
     dl = DataLoader(dataset, batch_size=count, shuffle=True, num_workers=1)
-    return iter(dl).next()[0]
+    return iter(dl).next()
 
 def filter_label(data, inds):
     inputs, labels = data
