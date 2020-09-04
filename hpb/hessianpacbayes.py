@@ -1,7 +1,6 @@
 import torch
 import numpy as np
 import math
-
 from .dp import *
 from .arithm import *
 from .loss import *
@@ -50,7 +49,7 @@ class PBModule_base():
                        ):
 
         mean_post = parameters_to_vector(self.net.parameters())
-
+        
         # sigma_post = torch.Tensor.abs(parameters_to_vector(self.net.parameters())).to(self.device).requires_grad_() # pylint: disable=no-member
         sigma_post = torch.log(torch.Tensor.abs(mean_post)).to(self.device).requires_grad_() # pylint: disable=no-member
         lambda_prior = torch.tensor(lambda_prior, device=self.device).requires_grad_() # pylint: disable=not-callable
@@ -58,7 +57,7 @@ class PBModule_base():
         data_size = len(self.datasets[True])
 
         self.BRE = PacBayesLoss(self.net, mean_prior, lambda_prior, mean_post, sigma_post, conf_param, precision, bound, data_size, self.accuracy_loss, self.device).to(self.device)
-
+        
     def compute_bound(self,
                       n_monte_carlo_approx=1000,
                       delta_prime=0.01,
@@ -245,11 +244,13 @@ class PacBayes_Hessian(PBModule_base):
                        bound=0.1
                        ):
         mean_post = parameters_to_vector(self.net.parameters())
+        self.original_mean_post = copy.deepcopy(mean_post.detach())
+        print(mean_post)
         sigma_post = torch.log(torch.Tensor.abs(self.to_hessian(mean_post)))
         #print(list(sigma_post.detach().to('cpu').numpy()))
         sigma_post = sigma_post.to(self.device).requires_grad_() # pylint: disable=not-callable
         lambda_prior = torch.tensor(lambda_prior, device=self.device).requires_grad_() # pylint: disable=not-callable
-
+        
         data_size = len(self.datasets[True])
 
         self.BRE = PacBayesLoss_Hessian(self.net, mean_prior, lambda_prior, mean_post, sigma_post, conf_param, precision, bound, data_size, self.accuracy_loss, self.device, self.noise_generation).to(self.device)
@@ -510,9 +511,10 @@ class PacBayes_Hessian_approx(PacBayes_Hessian):
             self.norms[layer] = self.norms[layer].reshape(-1).sqrt_()
         self.eigenvals = torch.cat(self.eigenvals)
         print("Hessian Calculation Complete", flush=True)
-        self.old_UTAU_eigenvecs = self.UTAU_eigenvecs
-        self.old_xxT_eigenvecs = self.xxT_eigenvecs
-
+        self.old_UTAU = UTAU
+        self.old_xxT = xxT
+        self.old_UTAU_eigenvecs = copy.deepcopy(self.UTAU_eigenvecs)
+        self.old_xxT_eigenvecs = copy.deepcopy(self.xxT_eigenvecs)
     def to_hessian(self, vec):
         ans = []
         s = 0
@@ -546,9 +548,16 @@ class PacBayes_Hessian_iterative(PacBayes_Hessian_approx):
         super().__init__(network, datasets, criterion, accuracy_loss)
 
     def iterative_hessian_calc(self):
-        sigma_post_standard = self.to_standard(self.BRE.sigma_post_.detach())
         HM = self.HM
-        HM.load_sd(self.get_sd())
+        mean_post = self.BRE.mean_post.detach()
+        mean_diff = torch.norm(self.original_mean_post-mean_post)
+        hessian_diff = 0
+
+        #print(self.BRE.sigma_post_.detach())
+        sigma_post_standard = self.to_standard(self.BRE.sigma_post_.detach())
+        #print(self.to_hessian(sigma_post_standard))
+        #HM.load_vec(mean_post)
+        #HM.load_sd(self.get_sd())
         UTAU = HM.expectation(HM.decomp.UTAU_comp, self.layers, out_device=HM.device, to_cache=False, print_log=False, y_classification_mode=self.y_classification_mode)
         xxT = HM.expectation(HM.decomp.xxT_comp, self.layers, out_device=HM.device, to_cache=False, print_log=False)
         for layer in self.layers: 
@@ -561,9 +570,17 @@ class PacBayes_Hessian_iterative(PacBayes_Hessian_approx):
             ones_mat = torch.ones((self.UTAU_d[layer], self.xxT_d[layer])).to(HM.device)
             self.norms[layer] = self.UTAU_eigenvecs[layer].square().matmul(ones_mat).matmul(self.xxT_eigenvecs_T[layer].square())
             self.norms[layer] = self.norms[layer].reshape(-1).sqrt_()
-            print(torch.norm(self.UTAU_eigenvecs[layer]-self.old_UTAU_eigenvecs[layer]))
-            print(torch.norm(self.xxT_eigenvecs[layer]-self.old_xxT_eigenvecs[layer]))
+
+            #hessian_diff += torch.norm(self.UTAU_eigenvecs[layer]-self.old_UTAU_eigenvecs[layer])
+            #hessian_diff += torch.norm(self.xxT_eigenvecs[layer]-self.old_xxT_eigenvecs[layer])
+            #print(torch.norm(self.UTAU_eigenvecs[layer]-self.old_UTAU_eigenvecs[layer]))
+            #print(torch.norm(self.xxT_eigenvecs[layer]-self.old_xxT_eigenvecs[layer]))
+            #print(torch.norm(UTAU[layer]-self.old_UTAU[layer]))
+            #print(torch.norm(xxT[layer]-self.old_xxT[layer]))
         self.BRE.sigma_post_ = nn.Parameter(self.to_hessian(sigma_post_standard))
+        #print(self.to_hessian(sigma_post_standard))
+        #print(self.BRE.sigma_post_.detach())
+        #print('mean difference: {:.4g}, hessian difference: {:.4g}'.format(mean_diff, hessian_diff), flush=True)
     
     def optimize_PACB_RMSprop(self,
                               learning_rate=0.01,

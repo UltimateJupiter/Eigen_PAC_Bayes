@@ -6,7 +6,7 @@ from .dp import *
 from .decomposition import *
 from .measures import Measures
 from .decomposition import Decomp
-
+from torch.nn.utils import vector_to_parameters
 from .tsa import *
 from .visualization import vis
 from .layerwisefeature import IntermediateFeatureExtractor
@@ -56,6 +56,12 @@ class HessianModule():
     def load_sd(self, sd):
         log("Loaded state dict", self.print_log)
         self.ife.net.load_state_dict(sd)
+        self.clear_cache()
+        self.load_Ws()
+
+    def load_vec(self, vec):
+        log("Loaded parameter vector", self.print_log)
+        vector_to_parameters(vec, self.ife.net.parameters())
         self.clear_cache()
         self.load_Ws()
     
