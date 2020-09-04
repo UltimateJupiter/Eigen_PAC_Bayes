@@ -6,11 +6,11 @@ import numpy as np
 import time
 import itertools
 
-def log(info, print_log=True):
+def log(info, print_log=False):
     if print_log:
         print("[{}]  {}".format(datetime.datetime.now(), info))
 
-def timer(st, info='', timer_on=True):
+def timer(st, info='', timer_on=False):
     if timer_on:
         print("[{}]  {} {}".format(datetime.datetime.now(), datetime.datetime.now() - st, info))
 

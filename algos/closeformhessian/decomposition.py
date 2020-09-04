@@ -272,7 +272,7 @@ class Decomp():
 
         elif y_classification_mode == 'binary_logistic_pn1':
             A = p.mul(1 - p)
-            A.div_(np.log(2))
+            A = A.div_(np.log(2)).unsqueeze(-1)
         
         elif y_classification_mode == 'binary_logistic_01' or y_classification_mode == 'multi_logistic_pn1':
             # TODO: finish if needed

@@ -13,7 +13,7 @@ from .layerwisefeature import IntermediateFeatureExtractor
 
 class HessianModule():
 
-    def __init__(self, net, dataset, fc_seq, use_gpu=True, RAM_cap=64, net_eval=True, net_prepare=True, device=None, remain_labels=None, on_device_dataloader=True):
+    def __init__(self, net, dataset, fc_seq, use_gpu=True, RAM_cap=64, net_eval=True, net_prepare=True, device=None, remain_labels=None, on_device_dataloader=True, print_log=True):
         
         self.dataset = dataset
         if not net_prepare:
@@ -31,7 +31,7 @@ class HessianModule():
         self.Ws = None
         self.RAM_cap = RAM_cap * (2 ** 30)
         self.load_Ws()
-
+        self.print_log = print_log
         self.measure = Measures(self.device)
         self.vis = vis(self.device)
         self.utils = Utils(self, self.device)
@@ -54,7 +54,7 @@ class HessianModule():
         empty_cache(self.device)
 
     def load_sd(self, sd):
-        log("Loaded state dict")
+        log("Loaded state dict", self.print_log)
         self.ife.net.load_state_dict(sd)
         self.clear_cache()
         self.load_Ws()
@@ -63,7 +63,7 @@ class HessianModule():
         self.dl.set_remain_labels(remain_labels)
     
     def clear_cache(self):
-        log('cache cleared')
+        log('cache cleared', self.print_log)
         self.cache = {}
     
     def config_stats_module(self, comp_layers, out_device):

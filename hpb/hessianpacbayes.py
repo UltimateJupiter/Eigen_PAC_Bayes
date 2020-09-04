@@ -7,6 +7,7 @@ from .arithm import *
 from .loss import *
 from .test import eval_model
 from .utils import *
+from algos.closeformhessian import hessianmodule
 import copy
 from functools import reduce
 
@@ -483,31 +484,34 @@ class PacBayes_Hessian_approx(PacBayes_Hessian):
         self.eigenvals = torch.cat(self.eigenvals)
         plog("Hessian loaded from {}".format(1))
     
-    def load_eigenthings(self, layers, UTAU_eigenvals, UTAU_eigenvecs, xxT_eigenvals, xxT_eigenvecs, norms):
+    def hessian_calc(self, network, layers, y_classification_mode='binary_logistic_pn1'):
         self.layers = layers
-        self.UTAU_eigenvals = {}
-        self.UTAU_eigenvecs = {}
-        self.xxT_eigenvals = {}
-        self.xxT_eigenvecs = {}
+        self.y_classification_mode = y_classification_mode
+        HM = hessianmodule.HessianModule(network, self.datasets[True], self.layers, RAM_cap=64, print_log=False)
+        self.HM = HM
+        HM.load_sd(self.get_sd())
+        UTAU = HM.expectation(HM.decomp.UTAU_comp, self.layers, out_device=HM.device, to_cache=False, print_log=False, y_classification_mode=y_classification_mode)
+        xxT = HM.expectation(HM.decomp.xxT_comp, self.layers, out_device=HM.device, to_cache=False, print_log=False)
+        self.UTAU_eigenvals, self.UTAU_eigenvecs, self.UTAU_eigenvecs_T, self.UTAU_d = {}, {}, {}, {}
+        self.xxT_eigenvals, self.xxT_eigenvecs, self.xxT_eigenvecs_T, self.xxT_d = {}, {}, {}, {}
         self.norms = {}
         self.eigenvals = []
-        self.UTAU_eigenvecs_T = {}
-        self.xxT_eigenvecs_T = {}
-        self.UTAU_d = {}
-        self.xxT_d = {}
         for layer in self.layers:
-            self.UTAU_eigenvals[layer] = UTAU_eigenvals[layer].to(self.device)
-            self.UTAU_eigenvecs[layer] = UTAU_eigenvecs[layer].to(self.device)
-            self.xxT_eigenvals[layer] = xxT_eigenvals[layer].to(self.device)
-            self.xxT_eigenvecs[layer] = xxT_eigenvecs[layer].to(self.device)
-            self.norms[layer] = norms[layer].to(self.device)
+            self.UTAU_eigenvals[layer], self.UTAU_eigenvecs[layer] = HM.utils.eigenthings_tensor_utils(UTAU[layer], device=HM.device, symmetric=True)
+            self.xxT_eigenvals[layer], self.xxT_eigenvecs[layer] = HM.utils.eigenthings_tensor_utils(xxT[layer], device=HM.device, symmetric=True) 
             self.eigenvals.append(self.UTAU_eigenvals[layer].ger(self.xxT_eigenvals[layer]).reshape(-1))
             self.eigenvals.append(self.UTAU_eigenvals[layer])
             self.UTAU_eigenvecs_T[layer] = self.UTAU_eigenvecs[layer].t()
             self.xxT_eigenvecs_T[layer] = self.xxT_eigenvecs[layer].t()
             self.UTAU_d[layer] = self.UTAU_eigenvecs[layer].shape[1]
             self.xxT_d[layer] = self.xxT_eigenvecs[layer].shape[1]
+            ones_mat = torch.ones((self.UTAU_d[layer], self.xxT_d[layer])).to(HM.device)
+            self.norms[layer] = self.UTAU_eigenvecs[layer].square().matmul(ones_mat).matmul(self.xxT_eigenvecs_T[layer].square())
+            self.norms[layer] = self.norms[layer].reshape(-1).sqrt_()
         self.eigenvals = torch.cat(self.eigenvals)
+        print("Hessian Calculation Complete", flush=True)
+        self.old_UTAU_eigenvecs = self.UTAU_eigenvecs
+        self.old_xxT_eigenvecs = self.xxT_eigenvecs
 
     def to_hessian(self, vec):
         ans = []
@@ -536,3 +540,121 @@ class PacBayes_Hessian_approx(PacBayes_Hessian):
             ans.append(vec[s:e].matmul(self.UTAU_eigenvecs[layer]))
             s = e
         return torch.cat(ans)
+
+class PacBayes_Hessian_iterative(PacBayes_Hessian_approx):
+    def __init__(self, network, datasets, criterion, accuracy_loss):
+        super().__init__(network, datasets, criterion, accuracy_loss)
+
+    def iterative_hessian_calc(self):
+        sigma_post_standard = self.to_standard(self.BRE.sigma_post_.detach())
+        HM = self.HM
+        HM.load_sd(self.get_sd())
+        UTAU = HM.expectation(HM.decomp.UTAU_comp, self.layers, out_device=HM.device, to_cache=False, print_log=False, y_classification_mode=self.y_classification_mode)
+        xxT = HM.expectation(HM.decomp.xxT_comp, self.layers, out_device=HM.device, to_cache=False, print_log=False)
+        for layer in self.layers: 
+            self.UTAU_eigenvals[layer], self.UTAU_eigenvecs[layer] = HM.utils.eigenthings_tensor_utils(UTAU[layer], device=HM.device, symmetric=True)
+            self.xxT_eigenvals[layer], self.xxT_eigenvecs[layer] = HM.utils.eigenthings_tensor_utils(xxT[layer], device=HM.device, symmetric=True) 
+            self.UTAU_eigenvecs_T[layer] = self.UTAU_eigenvecs[layer].t()
+            self.xxT_eigenvecs_T[layer] = self.xxT_eigenvecs[layer].t()
+            self.UTAU_d[layer] = self.UTAU_eigenvecs[layer].shape[1]
+            self.xxT_d[layer] = self.xxT_eigenvecs[layer].shape[1]
+            ones_mat = torch.ones((self.UTAU_d[layer], self.xxT_d[layer])).to(HM.device)
+            self.norms[layer] = self.UTAU_eigenvecs[layer].square().matmul(ones_mat).matmul(self.xxT_eigenvecs_T[layer].square())
+            self.norms[layer] = self.norms[layer].reshape(-1).sqrt_()
+            print(torch.norm(self.UTAU_eigenvecs[layer]-self.old_UTAU_eigenvecs[layer]))
+            print(torch.norm(self.xxT_eigenvecs[layer]-self.old_xxT_eigenvecs[layer]))
+        self.BRE.sigma_post_ = nn.Parameter(self.to_hessian(sigma_post_standard))
+    
+    def optimize_PACB_RMSprop(self,
+                              learning_rate=0.01,
+                              alpha=0.9,
+                              epoch_num=20,
+                              lr_gamma=1,
+                              lr_decay_mode='step',
+                              batchsize=100,
+                              step_lr_decay=100,
+                              hessian_calc_interval=1,
+                              hessian_calc_decay=10
+                              ):
+        
+        """ Optimizing the PAC-Bayes Bound using RMSprop
+        Parameters
+        ----------
+        learning_rate : float(default=0.01)
+            Initial learning rate
+        alpha : float (default=0.9)
+            RMSprop coef
+        epoch_num : int (default=100)
+            number of epochs to optimize
+        lr_gamma : int (default=0.1)
+            learning rate decay rate for 10 epochs
+        lr_decay_mode : str ['exp', 'step'] (default='exp')
+            -
+        batchsize : int
+            -
+        """
+
+        assert self.BRE is not None, 'need to initialize BRE first'
+        BRE = self.BRE
+
+        optimizer = torch.optim.RMSprop(filter(lambda p: p.requires_grad, BRE.parameters()), lr=learning_rate, alpha=0.9)
+        nnloss = mnnLoss(self.net, self.criterion, BRE.mean_post, BRE.sigma_post_, BRE.d_size, self.device)
+
+        train_loader = self.dataloaders[True]
+        train_loader.set_batchsize(batchsize)
+        
+        if lr_decay_mode == 'step':
+            scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_lr_decay, gamma=lr_gamma)
+        else:
+            scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=lr_gamma**(1 / 10), last_epoch=-1)
+
+        t = time.time()
+        #BRE_losses, KL_value, SNN_losses, norm_weights, norm_sigma, norm_lambda = (list() for i in range(6))
+        
+        print("\nStarting PAC-Bayes bound optimization - RMSprop")
+        train_info = "\nEpochs {}\ninitial_lr: {:.3g}\nlr_decay_alpha: {:.3g}\nlr_decay_mode: {}\nbatchsize: {}\n"
+        print(train_info.format(epoch_num, learning_rate, lr_gamma, lr_decay_mode, batchsize))
+        
+        hessian_calc_epoch = 1
+        for epoch in np.arange(epoch_num):
+            st = time.time()
+
+            if epoch % step_lr_decay == 0 and epoch > 0:
+                hessian_calc_interval *= hessian_calc_decay
+            if epoch == hessian_calc_epoch:
+                self.iterative_hessian_calc()
+                hessian_calc_epoch += hessian_calc_interval
+
+            
+            LOG_INFO = "Epoch {}: | BRE:{:.4g}, KL:{:.4g}, SNN_loss:{:.4g}, Std_prior:{:.4g}, lr:{:2g} | took {:4g}s"
+            SNN_loss, BRE_loss = [], []
+            for i, (inputs, labels) in enumerate(iter(train_loader)):
+
+                inputs, labels = inputs.to(self.device), labels.to(self.device)
+                loss1 = BRE()
+                loss1.backward(retain_graph=True)
+
+                noise_standard, noise_hessian = self.noise_generation()
+                loss2 = nnloss(inputs, labels, noise_standard)
+                BRE_loss.append(loss1.item())
+                SNN_loss.append(loss2.item())
+
+                self.net.zero_grad()
+                loss2.backward()
+                
+                weights_grad = torch.cat(list(Z.grad.view(-1) for Z in list(nnloss.model.parameters())), dim=0) # pylint: disable=no-member
+                BRE.mean_post.grad += weights_grad
+                BRE.sigma_post_.grad += self.to_hessian(weights_grad) * noise_hessian
+
+                optimizer.step()
+                optimizer.zero_grad()
+
+            #BRE_losses.append(np.mean(BRE_loss))
+            #SNN_losses.append(np.mean(SNN_loss))
+            #KL_value.append(BRE.kl_value)
+            
+            #print(LOG_INFO.format(epoch, BRE_losses[-1], KL_value[-1], SNN_losses[-1], BRE.lambda_prior_, scheduler.get_last_lr()[0], float(time.time() - st)), flush=True)
+            print(LOG_INFO.format(epoch, np.mean(BRE_loss), BRE.kl_value, np.mean(SNN_loss), BRE.lambda_prior_, scheduler.get_last_lr()[0], float(time.time() - st)), flush=True)
+            scheduler.step()
+        
+        plog("Optimization done. Took {:.4g}s".format(time.time() - t))

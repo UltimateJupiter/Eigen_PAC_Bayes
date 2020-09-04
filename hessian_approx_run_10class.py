@@ -12,6 +12,9 @@ test_dirc = '../hessian_eigenspace_overlap/MNIST_Exp1/experiments/FC1_600_fixlr0
 hessian_file = 'experiment_log/run_1/MNIST_Exp1_FC1_600_fixlr0.01_E-1_UTAU_xxT.eval'
 test_dirc = '../hessian_eigenspace_overlap/MNIST_Exp1/experiments/FC2_600_fixlr0.01'
 hessian_file = 'experiment_log/run_1/MNIST_Exp1_FC2_600_fixlr0.01_E-1_UTAU_xxT.eval'
+test_dirc = '../hessian_eigenspace_overlap/MNIST_RandomLabel/experiments/FC2_fixlr0.01_RL'
+hessian_file = 'experiment_log/run_1/MNIST_RandomLabel_FC2_fixlr0.01_RL_E-1_UTAU_xxT.eval'
+
 
 def main():
 
