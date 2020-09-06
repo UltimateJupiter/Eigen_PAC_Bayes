@@ -24,7 +24,7 @@ def matseq_mul_t(mats, transposes):
             ret = torch.mm(ret, mat) if len(ret.shape) == 2 else torch.bmm(ret, mat) # pylint: disable=no-member
     return ret
 
-def auto_batchsize_output(device, sample, max_cap=2048, RAM_cap=32):
+def auto_batchsize_output(device, sample, max_cap=1024, RAM_cap=32):
 
     RAM_cap *= (2 ** 30)
     if device == 'cpu':

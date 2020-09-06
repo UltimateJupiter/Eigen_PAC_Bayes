@@ -73,7 +73,7 @@ class PBModule_base():
     def get_sd(self, out_device=None):
         if out_device is None:
             out_device = self.device
-        sd = self.net.state_dict()
+        sd = copy.deepcopy(self.net.state_dict())
         for k in sd.keys():
             sd[k] = sd[k].to(out_device)
         return sd
@@ -266,6 +266,7 @@ class PacBayes_Hessian(PBModule_base):
         if epsilon is None:
             epsilon = np.exp(2*lambda_prior)
         mean_post = parameters_to_vector(self.net.parameters())
+        self.original_mean_post = copy.deepcopy(mean_post.detach())
         sigma_post = torch.log(torch.div(epsilon, self.eigenvals.abs().sqrt()))
         sigma_post[sigma_post > 0] = 0
         sigma_post[torch.isnan(sigma_post)] = 0
@@ -511,10 +512,7 @@ class PacBayes_Hessian_approx(PacBayes_Hessian):
             self.norms[layer] = self.norms[layer].reshape(-1).sqrt_()
         self.eigenvals = torch.cat(self.eigenvals)
         print("Hessian Calculation Complete", flush=True)
-        self.old_UTAU = UTAU
-        self.old_xxT = xxT
-        self.old_UTAU_eigenvecs = copy.deepcopy(self.UTAU_eigenvecs)
-        self.old_xxT_eigenvecs = copy.deepcopy(self.xxT_eigenvecs)
+
     def to_hessian(self, vec):
         ans = []
         s = 0
@@ -551,13 +549,9 @@ class PacBayes_Hessian_iterative(PacBayes_Hessian_approx):
         HM = self.HM
         mean_post = self.BRE.mean_post.detach()
         mean_diff = torch.norm(self.original_mean_post-mean_post)
-        hessian_diff = 0
-
-        #print(self.BRE.sigma_post_.detach())
-        sigma_post_standard = self.to_standard(self.BRE.sigma_post_.detach())
-        #print(self.to_hessian(sigma_post_standard))
-        #HM.load_vec(mean_post)
-        #HM.load_sd(self.get_sd())
+        #sigma_post = self.BRE.sigma_post_.detach()
+        #sigma_post_standard = self.to_standard(sigma_post)
+        HM.load_vec(mean_post)
         UTAU = HM.expectation(HM.decomp.UTAU_comp, self.layers, out_device=HM.device, to_cache=False, print_log=False, y_classification_mode=self.y_classification_mode)
         xxT = HM.expectation(HM.decomp.xxT_comp, self.layers, out_device=HM.device, to_cache=False, print_log=False)
         for layer in self.layers: 
@@ -570,17 +564,8 @@ class PacBayes_Hessian_iterative(PacBayes_Hessian_approx):
             ones_mat = torch.ones((self.UTAU_d[layer], self.xxT_d[layer])).to(HM.device)
             self.norms[layer] = self.UTAU_eigenvecs[layer].square().matmul(ones_mat).matmul(self.xxT_eigenvecs_T[layer].square())
             self.norms[layer] = self.norms[layer].reshape(-1).sqrt_()
-
-            #hessian_diff += torch.norm(self.UTAU_eigenvecs[layer]-self.old_UTAU_eigenvecs[layer])
-            #hessian_diff += torch.norm(self.xxT_eigenvecs[layer]-self.old_xxT_eigenvecs[layer])
-            #print(torch.norm(self.UTAU_eigenvecs[layer]-self.old_UTAU_eigenvecs[layer]))
-            #print(torch.norm(self.xxT_eigenvecs[layer]-self.old_xxT_eigenvecs[layer]))
-            #print(torch.norm(UTAU[layer]-self.old_UTAU[layer]))
-            #print(torch.norm(xxT[layer]-self.old_xxT[layer]))
-        self.BRE.sigma_post_ = nn.Parameter(self.to_hessian(sigma_post_standard))
-        #print(self.to_hessian(sigma_post_standard))
-        #print(self.BRE.sigma_post_.detach())
-        #print('mean difference: {:.4g}, hessian difference: {:.4g}'.format(mean_diff, hessian_diff), flush=True)
+        #self.BRE.mean_post = nn.Parameter(self.to_hessian(sigma_post_standard))
+        print('mean difference: {:.4g}'.format(mean_diff))
     
     def optimize_PACB_RMSprop(self,
                               learning_rate=0.01,
@@ -591,7 +576,8 @@ class PacBayes_Hessian_iterative(PacBayes_Hessian_approx):
                               batchsize=100,
                               step_lr_decay=100,
                               hessian_calc_interval=1,
-                              hessian_calc_decay=10
+                              hessian_calc_decay=10,
+                              hessian_calc_epoch=1
                               ):
         
         """ Optimizing the PAC-Bayes Bound using RMSprop
@@ -632,7 +618,6 @@ class PacBayes_Hessian_iterative(PacBayes_Hessian_approx):
         train_info = "\nEpochs {}\ninitial_lr: {:.3g}\nlr_decay_alpha: {:.3g}\nlr_decay_mode: {}\nbatchsize: {}\n"
         print(train_info.format(epoch_num, learning_rate, lr_gamma, lr_decay_mode, batchsize))
         
-        hessian_calc_epoch = 1
         for epoch in np.arange(epoch_num):
             st = time.time()
 
