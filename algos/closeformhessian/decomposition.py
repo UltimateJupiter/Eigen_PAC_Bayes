@@ -129,41 +129,64 @@ class Decomp():
         empty_cache(device)
         return ret
 
-    def U_comp(self, ife, layers, inputs, device, Ws, out_device=None, batch_sum=False, **kwargs):
+    def U_comp(self, ife, layers, inputs, device, Ws, out_device=None, batch_sum=False, auto_grad=False, **kwargs):
 
         inputs = inputs.to(device)
         softmax = torch.nn.Softmax(dim=1).to(device)
-        mid_out, final_out = ife(inputs)
-        target_layers = deepcopy(ife.target_layers)
-        target_layers.reverse()
-
-        Cs = []
-        for layer in target_layers:
-            _, feat_out = mid_out[layer][0], mid_out[layer][1]
-            Cs.append(matrix_diag((feat_out >= 0).float()))
-        
         Us = []
-        batch_identity = torch.eye(final_out.size()[-1]).unsqueeze(0).repeat(final_out.size()[0], 1, 1).to(device) # pylint: disable=no-member
-        Us.append(batch_identity)
-        for i in range(len(target_layers) - 1):
-            U_prev = Us[i]
-            U_next = U_prev.matmul(Ws[i]).matmul(Cs[i + 1])
-            Us.append(U_next)
-        
         ret = {}
+
+        if not auto_grad:
+            mid_out, final_out = ife(inputs)
+            target_layers = deepcopy(ife.target_layers)
+            target_layers.reverse()
+
+            Cs = []
+            for layer in target_layers:
+                _, feat_out = mid_out[layer][0], mid_out[layer][1]
+                Cs.append(matrix_diag((feat_out >= 0).float()))
+            
+            batch_identity = torch.eye(final_out.size()[-1]).unsqueeze(0).repeat(final_out.size()[0], 1, 1).to(device) # pylint: disable=no-member
+            Us.append(batch_identity)
+            for i in range(len(target_layers) - 1):
+                U_prev = Us[i]
+                U_next = U_prev.matmul(Ws[i]).matmul(Cs[i + 1])
+                Us.append(U_next)
+            
+            for layer in layers:
+                assert layer in target_layers
+                i = target_layers.index(layer)
+                U = Us[i]
+                ret[layer] = U
+        
+        else:
+            mid_out, final_out = ife.forward_with_grad(inputs)
+            b, c = final_out.shape
+            layer_outs = []
+
+            for layer in layers:
+                # Generate placeholders, seperate outputs
+                layer_out = mid_out[layer][1]
+                n = layer_out.shape[1]
+                U_blank = torch.zeros([b, c, n]) # pylint: disable=no-member
+                ret[layer] = U_blank
+                layer_outs.append(layer_out)
+            
+            for i in range(b):
+                for j in range(c):
+                    g = torch.autograd.grad(final_out[i][j], layer_outs, retain_graph=True)
+                    for ind, layer in enumerate(layers):
+                        ret[layer][i][j] = g[ind][i]
+
         for layer in layers:
-            assert layer in target_layers
-            i = target_layers.index(layer)
-            U = Us[i]
             if batch_sum:
-                U = U.sum(axis=0)
+                ret[layer] = ret[layer].sum(axis=0)
             if out_device is not None:
-                U = U.to(out_device)
-            ret[layer] = U
+                ret[layer] = ret[layer].to(out_device)
 
         empty_cache(device)
         return ret
-    
+
     def xxT_comp(self, ife, layers, inputs, device, Ws=None, out_device=None, batch_sum=False, **kwargs):
         
         inputs = inputs.to(device)
@@ -182,10 +205,10 @@ class Decomp():
             ret[layer] = xxTs
         return ret
 
-    def UTAU_comp(self, ife, layers, inputs, device, Ws, out_device=None, batch_sum=False, **kwargs):
+    def UTAU_comp(self, ife, layers, inputs, device, Ws, out_device=None, batch_sum=False, y_classification_mode='softmax', **kwargs):
 
         Us = self.U_comp(ife, layers, inputs, device, Ws, out_device=device, **kwargs)
-        A = self.A_comp(ife, layers, inputs, device, Ws, out_device=device, **kwargs)[layers[0]]
+        A = self.A_comp(ife, layers, inputs, device, Ws, out_device=device, y_classification_mode=y_classification_mode, **kwargs)[layers[0]]
         
         ret = {}
         for layer in layers:
@@ -195,6 +218,23 @@ class Decomp():
             if out_device is not None:
                 UTAU = UTAU.to(out_device)
             ret[layer] = UTAU
+
+        empty_cache(device)
+        return ret
+    
+    def UTFAU_comp(self, ife, layers, inputs, device, Ws, out_device=None, batch_sum=False, y_classification_mode='softmax', **kwargs):
+
+        Us = self.U_comp(ife, layers, inputs, device, Ws, out_device=device, **kwargs)
+        FA = self.FA_comp(ife, layers, inputs, device, Ws, out_device=device, y_classification_mode=y_classification_mode, **kwargs)[layers[0]]
+        
+        ret = {}
+        for layer in layers:
+            UTFAU = Us[layer].transpose(1, 2).matmul(FA).matmul(Us[layer])
+            if batch_sum:
+                UTFAU = UTFAU.sum(axis=0)
+            if out_device is not None:
+                UTFAU = UTFAU.to(out_device)
+            ret[layer] = UTFAU
 
         empty_cache(device)
         return ret
@@ -230,7 +270,7 @@ class Decomp():
         for layer in target_layers:
             M.append(bkp_2d(Us[layer].transpose(1,2), xs[layer]))
             M.append(Us[layer].transpose(1,2))
-        M = torch.cat(M, dim=1)
+        M = torch.cat(M, dim=1)  # pylint: disable=no-member
         H = M.mul(A)
         H = H.matmul(M.transpose_(1,2))
         if batch_sum:
@@ -272,7 +312,8 @@ class Decomp():
 
         elif y_classification_mode == 'binary_logistic_pn1':
             A = p.mul(1 - p)
-            A = A.div_(np.log(2)).unsqueeze(-1)
+            A.div_(np.log(2))
+            A = A.unsqueeze(-1)
         
         elif y_classification_mode == 'binary_logistic_01' or y_classification_mode == 'multi_logistic_pn1':
             # TODO: finish if needed
@@ -283,6 +324,129 @@ class Decomp():
         if out_device is not None:
             A = A.to(out_device)
         ret = {layer: A for layer in layers}
+        return ret
+
+    def AL_comp(self, ife, layers, inputs, device, Ws, out_device=None, batch_sum=False, **kwargs):
+
+        # from https://arxiv.org/pdf/1901.08244.pdf
+        p = self.p_comp(ife, layers, inputs, device, Ws, out_device=device, **kwargs)[layers[0]]
+        I = matrix_diag(torch.ones_like(p)) # pylint: disable=no-member
+        AL = I - p.unsqueeze(-1)
+        
+        if batch_sum:
+            AL = AL.sum(axis=0)
+        if out_device is not None:
+            AL = AL.to(out_device)
+        ret = {layer: AL for layer in layers}
+        return ret
+
+    def UTAL_comp(self, ife, layers, inputs, device, Ws, out_device=None, batch_sum=False, **kwargs):
+
+        Us = self.U_comp(ife, layers, inputs, device, Ws, out_device=device, **kwargs)
+        AL = self.AL_comp(ife, layers, inputs, device, Ws, out_device=device, **kwargs)[layers[0]]
+        
+        ret = {}
+        for layer in layers:
+            UTLA = Us[layer].transpose(1, 2).matmul(AL)
+            if batch_sum:
+                UTLA = UTLA.sum(axis=0)
+            if out_device is not None:
+                UTLA = UTLA.to(out_device)
+            ret[layer] = UTLA
+        return ret
+    
+    
+    def ALPh_comp(self, ife, layers, inputs, device, Ws, out_device=None, batch_sum=False, **kwargs):
+
+        p = self.p_comp(ife, layers, inputs, device, Ws, out_device=device, **kwargs)[layers[0]]
+        AL = self.AL_comp(ife, layers, inputs, device, Ws, out_device=device, **kwargs)[layers[0]]
+        diagp_sqrt = matrix_diag(p).sqrt()
+
+        ret = {}
+        ALPh = AL.matmul(diagp_sqrt)
+        if batch_sum:
+            ALPh = ALPh.sum(axis=0)
+        if out_device is not None:
+            ALPh = ALPh.to(out_device)
+        ret = {layer: ALPh for layer in layers}
+        return ret
+    
+    def UTALPh_comp(self, ife, layers, inputs, device, Ws, out_device=None, batch_sum=False, **kwargs):
+
+        ALPh = self.ALPh_comp(ife, layers, inputs, device, Ws, out_device=device, **kwargs)[layers[0]]
+        Us = self.U_comp(ife, layers, inputs, device, Ws, out_device=device, **kwargs)
+
+        ret = {}
+        for layer in layers:
+            UTLAPh = Us[layer].transpose(-1, -2).matmul(ALPh)
+            if batch_sum:
+                UTLAPh = UTLAPh.sum(axis=0)
+            if out_device is not None:
+                UTLAPh = UTLAPh.to(out_device)
+            ret[layer] = UTLAPh
+        return ret
+
+    def xTUTALPh_comp(self, ife, layers, inputs, device, Ws, out_device=None, batch_sum=False, **kwargs):
+
+        UTALPh = self.UTALPh_comp(ife, layers, inputs, device, Ws, out_device=device, **kwargs)
+        x = self.x_comp(ife, layers, inputs, device, Ws, out_device=device, **kwargs)
+
+        ret = {}
+        for layer in layers:
+            xTUTLAPh = bkp_2d(x[layer], UTALPh[layer])
+            if batch_sum:
+                xTUTLAPh = xTUTLAPh.sum(axis=0)
+            if out_device is not None:
+                xTUTLAPh = xTUTLAPh.to(out_device)
+            ret[layer] = xTUTLAPh
+        return ret
+    
+    def Adcp_comp(self, ife, layers, inputs, device, Ws, out_device=None, batch_sum=False, **kwargs):
+
+        # An alternative way of computing A matrix
+        # from https://arxiv.org/pdf/1901.08244.pdf
+        # Do not use this for computation, use A_comp instead
+
+        p = self.p_comp(ife, layers, inputs, device, Ws, out_device=device, **kwargs)[layers[0]]
+        I = matrix_diag(torch.ones_like(p)) # pylint: disable=no-member
+        AL = I - p.unsqueeze(-1)
+        diag_p = matrix_diag(p)
+        
+        Adcp = AL.bmm(diag_p).bmm(AL.transpose(-1, -2))
+        
+        if batch_sum:
+            Adcp = Adcp.sum(axis=0)
+        if out_device is not None:
+            Adcp = Adcp.to(out_device)
+        ret = {layer: Adcp for layer in layers}
+        return ret
+
+    def FA_comp(self, ife, layers, inputs, device, Ws, out_device=None, batch_sum=False, labels=None, **kwargs):
+
+        assert labels is not None
+        labels = labels.view(-1, 1)
+        p = self.p_comp(ife, layers, inputs, device, Ws, out_device=device, **kwargs)[layers[0]]
+        y = torch.zeros_like(p).scatter_(1, labels, 1) # pylint: disable=no-member
+        grad = (p - y).unsqueeze(-1)
+        FA = grad.matmul(grad.transpose(-1, -2))
+
+        if batch_sum:
+            FA = FA.sum(axis=0)
+        if out_device is not None:
+            FA = FA.to(out_device)
+        ret = {layer: FA for layer in layers}
+        return ret
+
+    def dp_comp(self, ife, layers, inputs, device, Ws, out_device=None, batch_sum=False, **kwargs):
+
+        p = self.p_comp(ife, layers, inputs, device, Ws, out_device=device, **kwargs)[layers[0]]
+        diag_p = matrix_diag(p)
+        
+        if batch_sum:
+            diag_p = diag_p.sum(axis=0)
+        if out_device is not None:
+            diag_p = diag_p.to(out_device)
+        ret = {layer: diag_p for layer in layers}
         return ret
 
     def Ah_comp(self, ife, layers, inputs, device, Ws, out_device=None, batch_sum=False, **kwargs):

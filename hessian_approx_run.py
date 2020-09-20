@@ -1,20 +1,28 @@
 import sys, os
 import torch
+import numpy as np
 from hpb.hessianpacbayes import *
 
 sd_sgd_sol = 'experiment_log/run_1/models/final.pth'
 sd_init = 'experiment_log/run_1/models/epoch0.pth'
-save_path = 'tmp_log/sigma_post/hessian_approx_FC2_20_calc.pth'
+save_path = 'tmp_log/sigma_post/hessian_approx_FC1_1200_final.pth'
 
 test_dirc = '../hessian_eigenspace_overlap/MNIST_TrueBinary/experiments/FC2_20_small_fixlr0.01_pn1'
 hessian_file = 'experiment_log/run_1/MNIST_TrueBinary_FC2_20_small_fixlr0.01_pn1_E-1_UTAU_xxT.eval'
-#test_dirc = '../hessian_eigenspace_overlap/MNIST_Binary/experiments/FC1_600_sgd0.01m0.9LS_l1d_pic01_labelpn1_bt100_RL'
+test_dirc = '../hessian_eigenspace_overlap/MNIST_Binary/experiments/FC1_600_sgd0.01m0.9LS_l1d_pic01_labelpn1_bt100_RL'
 #hessian_file = 'experiment_log/run_1/MNIST_Binary_FC1_600_sgd0.01m0.9LS_l1d_pic01_labelpn1_bt100_RL_E-1_UTAU_xxT.eval'
+test_dirc = '../hessian_eigenspace_overlap/CIFAR2_pn1/experiments/FC1_600_fixlr0.01'
+test_dirc = '../hessian_eigenspace_overlap/MNIST_TB_0M/experiments/FC1S_20_0M_fixlr0.01_pn1'
+test_dirc = '../hessian_eigenspace_overlap/MNIST_Binary/experiments/FC1_1200_sgd0.01m0.9LS_l1d_pic01_labelpn1_bt100'
+#test_dirc = '../hessian_eigenspace_overlap/MNIST_Binary/experiments/FC1_600_sgd0.01m0.9LS_l1d_pic01_labelpn1_bt100'
 
 layers = ['fc1', 'fc2']
-layers = ['fc1', 'fc2', 'fc3']
-def main():
 
+seed = 0
+def main():
+    print('seed: {}'.format(seed))
+    np.random.seed(seed)
+    torch.manual_seed(seed)
     assert os.path.isdir(test_dirc)
     sys.path.append(test_dirc)
     from config import Config # pylint: disable=no-name-in-module
@@ -43,7 +51,10 @@ def main():
     # exit()
     HPB.compute_bound(n_monte_carlo_approx=50000, sample_freq=100)
     #print(list(HPB.BRE.sigma_post_.detach().to('cpu').numpy()))
-    torch.save(HPB.BRE.sigma_post_.detach().to('cpu'), save_path)
-
+    out_dict = {}
+    out_dict['sigma_post'] = HPB.BRE.sigma_post_.detach().to('cpu')
+    out_dict['eigenvals'] = HPB.eigenvals.to('cpu')
+    torch.save(out_dict, save_path)
+    print(save_path)
 if __name__ == '__main__':
     main()

@@ -1,16 +1,22 @@
 import sys, os
 import torch
-import numpy as np
 from hpb.hessianpacbayes import *
 
 sd_sgd_sol = 'experiment_log/run_1/models/final.pth'
 sd_init = 'experiment_log/run_1/models/epoch0.pth'
-save_path = 'tmp_log/sigma_post/hessian_approx_FC2_300_final.pth'
+save_path = 'tmp_log/sigma_post/fisher_iterative_10class_FC2_10.pth'
 
+test_dirc = '../hessian_eigenspace_overlap/MNIST_Exp1/experiments/FC1_600_fixlr0.01'
+hessian_file = 'experiment_log/run_1/MNIST_Exp1_FC1_600_fixlr0.01_E-1_UTAU_xxT.eval'
 
-test_dirc = '../hessian_eigenspace_overlap/MNIST_Binary/experiments/FC2_300_sgd0.01m0.9LS_l1d_pic01_labelpn1_bt100'
+test_dirc = '../hessian_eigenspace_overlap/CIFAR10_Exp1/experiments/FC1_600_fixlr0.01'
+
+test_dirc = '../hessian_eigenspace_overlap/MNIST_Exp1/experiments/FC2_fixlr0.01'
+#test_dirc = '../hessian_eigenspace_overlap/MNIST_Exp1/experiments/FC1_600_fixlr0.01'
+#test_dirc = '../hessian_eigenspace_overlap/MNIST_RandomLabel/experiments/FC2_fixlr0.01_RL'
 
 layers = ['fc1', 'fc2', 'fc3']
+#layers = ['fc1', 'fc2']
 
 seed = 0
 def main():
@@ -28,10 +34,10 @@ def main():
     datasets = [conf.dataset(train=True, transform=conf.train_transform), conf.dataset(train=False, transform=conf.train_transform)]
     sd_path_sgd_sol, sd_path_init = os.path.join(test_dirc, sd_sgd_sol), os.path.join(test_dirc, sd_init)
     #hessian_path = os.path.join(test_dirc, hessian_file)
-    HPB = PacBayes_Hessian_approx(net, datasets, criterion_nn, accuracy_loss)
+    HPB = PacBayes_Fisher_iterative(net, datasets, criterion_nn, accuracy_loss)
     #HPB.load_hessian_file(hessian_path)
     HPB.load_sd(sd_path_sgd_sol)
-    HPB.hessian_calc(net, layers)
+    HPB.hessian_calc(net, layers, y_classification_mode='softmax')
     gap = HPB.generalization_gap()
     print(gap)
     HPB.evaluate(True, True)
@@ -40,7 +46,7 @@ def main():
     HPB.initialize_BRE(mean_prior)
 
     # HPB.optimize_PACB_RMSprop(learning_rate=0.001, epoch_num=3000, lr_decay_mode='step', lr_gamma=0.1, step_lr_decay=1000)
-    HPB.optimize_PACB_RMSprop(learning_rate=0.001, epoch_num=2000, lr_decay_mode='step', lr_gamma=0.1, step_lr_decay=400)
+    HPB.optimize_PACB_RMSprop(learning_rate=0.001, epoch_num=2000, lr_decay_mode='step', lr_gamma=0.1, step_lr_decay=400, hessian_calc_interval=10, hessian_calc_decay=1, hessian_calc_epoch=10)
     # HPB.optimize_PACB_RMSprop(learning_rate=0.01, epoch_num=800, lr_decay_mode='exp', lr_gamma=0.1 ** (1/40))
     # exit()
     HPB.compute_bound(n_monte_carlo_approx=50000, sample_freq=100)
