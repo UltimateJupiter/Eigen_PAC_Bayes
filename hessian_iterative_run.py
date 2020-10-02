@@ -5,7 +5,7 @@ from hpb.hessianpacbayes import *
 
 sd_sgd_sol = 'experiment_log/run_1/models/final.pth'
 sd_init = 'experiment_log/run_1/models/epoch0.pth'
-save_path = 'tmp_log/sigma_post/hessian_iterative_FC1_600_10.pth'
+save_path = 'tmp_log/sigma_post/hessian_iterative_FC1_600_10_test.pth'
 
 test_dirc = '../hessian_eigenspace_overlap/MNIST_TrueBinary/experiments/FC1_20_small_fixlr0.01_pn1'
 hessian_file = 'experiment_log/run_1/MNIST_TrueBinary_FC1_20_small_fixlr0.01_pn1_E-1_UTAU_xxT.eval'
@@ -13,7 +13,7 @@ test_dirc = '../hessian_eigenspace_overlap/MNIST_Binary/experiments/FC1_600_sgd0
 #hessian_file = 'experiment_log/run_1/MNIST_Binary_FC1_600_sgd0.01m0.9LS_l1d_pic01_labelpn1_bt100_RL_E-1_UTAU_xxT.eval'
 #test_dirc = '../hessian_eigenspace_overlap/CIFAR2_pn1/experiments/FC1_600_fixlr0.01'
 #test_dirc = '../hessian_eigenspace_overlap/MNIST_TB_0M/experiments/FC1S_20_0M_fixlr0.01_pn1'
-#test_dirc = '../hessian_eigenspace_overlap/MNIST_Binary/experiments/FC1_1200_sgd0.01m0.9LS_l1d_pic01_labelpn1_bt100'
+test_dirc = '../hessian_eigenspace_overlap/MNIST_Binary/experiments/FC1_600_sgd0.01m0.9LS_l1d_pic01_labelpn1_bt100'
 
 seed = 0
 

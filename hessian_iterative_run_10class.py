@@ -4,7 +4,7 @@ from hpb.hessianpacbayes import *
 
 sd_sgd_sol = 'experiment_log/run_1/models/final.pth'
 sd_init = 'experiment_log/run_1/models/epoch0.pth'
-save_path = 'tmp_log/sigma_post/hessian_iterative_10class_FC2_RL_10.pth'
+save_path = 'tmp_log/sigma_post/hessian_iterative_10class_FC2_600_10_test.pth'
 
 test_dirc = '../hessian_eigenspace_overlap/MNIST_Exp1/experiments/FC1_600_fixlr0.01'
 hessian_file = 'experiment_log/run_1/MNIST_Exp1_FC1_600_fixlr0.01_E-1_UTAU_xxT.eval'
@@ -12,11 +12,12 @@ hessian_file = 'experiment_log/run_1/MNIST_Exp1_FC1_600_fixlr0.01_E-1_UTAU_xxT.e
 test_dirc = '../hessian_eigenspace_overlap/CIFAR10_Exp1/experiments/FC1_600_fixlr0.01'
 
 test_dirc = '../hessian_eigenspace_overlap/MNIST_Exp1/experiments/FC2_fixlr0.01'
-test_dirc = '../hessian_eigenspace_overlap/MNIST_Exp1/experiments/FC1_600_fixlr0.01'
-test_dirc = '../hessian_eigenspace_overlap/MNIST_RandomLabel/experiments/FC2_fixlr0.01_RL'
+#test_dirc = '../hessian_eigenspace_overlap/MNIST_Exp1/experiments/FC1_600_fixlr0.01'
+#test_dirc = '../hessian_eigenspace_overlap/MNIST_RandomLabel/experiments/FC2_fixlr0.01_RL'
+test_dirc = '../hessian_eigenspace_overlap/MNIST_Exp1/experiments/FC2_600_fixlr0.01'
 
 layers = ['fc1', 'fc2', 'fc3']
-#layers = ['fc1', 'fc2']
+layers = ['fc1', 'fc2']
 
 seed = 0
 def main():

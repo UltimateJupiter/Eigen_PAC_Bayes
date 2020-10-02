@@ -470,7 +470,6 @@ class PacBayes_Hessian_approx(PacBayes_Hessian):
         self.UTAU_eigenvecs = hessian_data['UTAU_eigenvecs']
         self.xxT_eigenvals = hessian_data['xxT_eigenvals']
         self.xxT_eigenvecs = hessian_data['xxT_eigenvecs']
-        self.norms = hessian_data['norms']
         self.eigenvals = []
         self.UTAU_eigenvecs_T = {}
         self.xxT_eigenvecs_T = {}
@@ -489,14 +488,13 @@ class PacBayes_Hessian_approx(PacBayes_Hessian):
     def hessian_calc(self, network, layers, y_classification_mode='binary_logistic_pn1'):
         self.layers = layers
         self.y_classification_mode = y_classification_mode
-        HM = hessianmodule.HessianModule(network, self.datasets[True], self.layers, RAM_cap=64, print_log=False)
+        HM = hessianmodule.HessianModule(network, self.datasets[True], self.layers, RAM_cap=64)
         self.HM = HM
         HM.load_sd(self.get_sd())
         UTAU = HM.expectation(HM.decomp.UTAU_comp, self.layers, out_device=HM.device, to_cache=False, print_log=False, y_classification_mode=y_classification_mode)
         xxT = HM.expectation(HM.decomp.xxT_comp, self.layers, out_device=HM.device, to_cache=False, print_log=False)
         self.UTAU_eigenvals, self.UTAU_eigenvecs, self.UTAU_eigenvecs_T, self.UTAU_d = {}, {}, {}, {}
         self.xxT_eigenvals, self.xxT_eigenvecs, self.xxT_eigenvecs_T, self.xxT_d = {}, {}, {}, {}
-        self.norms = {}
         self.eigenvals = []
         for layer in self.layers:
             self.UTAU_eigenvals[layer], self.UTAU_eigenvecs[layer] = HM.utils.eigenthings_tensor_utils(UTAU[layer], device=HM.device, symmetric=True)
@@ -507,9 +505,6 @@ class PacBayes_Hessian_approx(PacBayes_Hessian):
             self.xxT_eigenvecs_T[layer] = self.xxT_eigenvecs[layer].t()
             self.UTAU_d[layer] = self.UTAU_eigenvecs[layer].shape[1]
             self.xxT_d[layer] = self.xxT_eigenvecs[layer].shape[1]
-            ones_mat = torch.ones((self.UTAU_d[layer], self.xxT_d[layer])).to(HM.device)
-            self.norms[layer] = self.UTAU_eigenvecs[layer].square().matmul(ones_mat).matmul(self.xxT_eigenvecs_T[layer].square())
-            self.norms[layer] = self.norms[layer].reshape(-1).sqrt_()
         self.eigenvals = torch.cat(self.eigenvals)
         print("Hessian Calculation Complete", flush=True)
 
@@ -520,7 +515,7 @@ class PacBayes_Hessian_approx(PacBayes_Hessian):
             e = s + self.UTAU_d[layer] * self.xxT_d[layer]
             vec_mat = vec[s:e].reshape(self.UTAU_d[layer], self.xxT_d[layer])
             ans_mat = self.UTAU_eigenvecs[layer].matmul(vec_mat).matmul(self.xxT_eigenvecs_T[layer])
-            ans.append(ans_mat.reshape(-1).div_(self.norms[layer]))
+            ans.append(ans_mat.reshape(-1))
             s = e
             e = s + self.UTAU_d[layer]
             ans.append(vec[s:e].matmul(self.UTAU_eigenvecs_T[layer]))
@@ -532,7 +527,7 @@ class PacBayes_Hessian_approx(PacBayes_Hessian):
         s = 0
         for layer in self.layers:
             e = s + self.UTAU_d[layer] * self.xxT_d[layer]
-            vec_mat = vec[s:e].mul(self.norms[layer]).reshape(self.UTAU_d[layer], self.xxT_d[layer])
+            vec_mat = vec[s:e].reshape(self.UTAU_d[layer], self.xxT_d[layer])
             ans_mat = self.UTAU_eigenvecs_T[layer].matmul(vec_mat).matmul(self.xxT_eigenvecs[layer])
             ans.append(ans_mat.reshape(-1))
             s = e
@@ -555,16 +550,17 @@ class PacBayes_Hessian_iterative(PacBayes_Hessian_approx):
         HM.load_vec(mean_post)
         UTAU = HM.expectation(HM.decomp.UTAU_comp, self.layers, out_device=HM.device, to_cache=False, print_log=False, y_classification_mode=self.y_classification_mode)
         xxT = HM.expectation(HM.decomp.xxT_comp, self.layers, out_device=HM.device, to_cache=False, print_log=False)
+        self.eigenvals = []
         for layer in self.layers: 
             self.UTAU_eigenvals[layer], self.UTAU_eigenvecs[layer] = HM.utils.eigenthings_tensor_utils(UTAU[layer], device=HM.device, symmetric=True)
             self.xxT_eigenvals[layer], self.xxT_eigenvecs[layer] = HM.utils.eigenthings_tensor_utils(xxT[layer], device=HM.device, symmetric=True) 
+            self.eigenvals.append(self.UTAU_eigenvals[layer].ger(self.xxT_eigenvals[layer]).reshape(-1))
+            self.eigenvals.append(self.UTAU_eigenvals[layer])
             self.UTAU_eigenvecs_T[layer] = self.UTAU_eigenvecs[layer].t()
             self.xxT_eigenvecs_T[layer] = self.xxT_eigenvecs[layer].t()
             self.UTAU_d[layer] = self.UTAU_eigenvecs[layer].shape[1]
             self.xxT_d[layer] = self.xxT_eigenvecs[layer].shape[1]
-            ones_mat = torch.ones((self.UTAU_d[layer], self.xxT_d[layer])).to(HM.device)
-            self.norms[layer] = self.UTAU_eigenvecs[layer].square().matmul(ones_mat).matmul(self.xxT_eigenvecs_T[layer].square())
-            self.norms[layer] = self.norms[layer].reshape(-1).sqrt_()
+        self.eigenvals = torch.cat(self.eigenvals)
         #self.BRE.mean_post = nn.Parameter(self.to_hessian(sigma_post_standard))
         print('mean difference: {:.4g}'.format(mean_diff))
     
@@ -661,89 +657,3 @@ class PacBayes_Hessian_iterative(PacBayes_Hessian_approx):
             scheduler.step()
         
         plog("Optimization done. Took {:.4g}s".format(time.time() - t))
-
-def PacBayes_Fisher_approx(PacBayes_Hessian_approx):
-    def __init__(self, network, datasets, criterion, accuracy_loss):
-        super().__init__(network, datasets, criterion, accuracy_loss)
-
-    def hessian_calc(self, network, layers, y_classification_mode='binary_logistic_pn1'):
-        self.layers = layers
-        self.y_classification_mode = y_classification_mode
-        HM = hessianmodule.HessianModule(network, self.datasets[True], self.layers, RAM_cap=64, print_log=False)
-        self.HM = HM
-        HM.load_sd(self.get_sd())
-        UTAU = HM.expectation(HM.decomp.UTFAU_comp, self.layers, out_device=HM.device, to_cache=False, print_log=False, y_classification_mode=y_classification_mode)
-        xxT = HM.expectation(HM.decomp.xxT_comp, self.layers, out_device=HM.device, to_cache=False, print_log=False)
-        self.UTAU_eigenvals, self.UTAU_eigenvecs, self.UTAU_eigenvecs_T, self.UTAU_d = {}, {}, {}, {}
-        self.xxT_eigenvals, self.xxT_eigenvecs, self.xxT_eigenvecs_T, self.xxT_d = {}, {}, {}, {}
-        self.norms = {}
-        self.eigenvals = []
-        for layer in self.layers:
-            self.UTAU_eigenvals[layer], self.UTAU_eigenvecs[layer] = HM.utils.eigenthings_tensor_utils(UTAU[layer], device=HM.device, symmetric=True)
-            self.xxT_eigenvals[layer], self.xxT_eigenvecs[layer] = HM.utils.eigenthings_tensor_utils(xxT[layer], device=HM.device, symmetric=True) 
-            self.eigenvals.append(self.UTAU_eigenvals[layer].ger(self.xxT_eigenvals[layer]).reshape(-1))
-            self.eigenvals.append(self.UTAU_eigenvals[layer])
-            self.UTAU_eigenvecs_T[layer] = self.UTAU_eigenvecs[layer].t()
-            self.xxT_eigenvecs_T[layer] = self.xxT_eigenvecs[layer].t()
-            self.UTAU_d[layer] = self.UTAU_eigenvecs[layer].shape[1]
-            self.xxT_d[layer] = self.xxT_eigenvecs[layer].shape[1]
-            ones_mat = torch.ones((self.UTAU_d[layer], self.xxT_d[layer])).to(HM.device)
-            self.norms[layer] = self.UTAU_eigenvecs[layer].square().matmul(ones_mat).matmul(self.xxT_eigenvecs_T[layer].square())
-            self.norms[layer] = self.norms[layer].reshape(-1).sqrt_()
-        self.eigenvals = torch.cat(self.eigenvals)
-        print("Hessian Calculation Complete", flush=True)
-
-def PacBayes_Fisher_iterative(PacBayes_Hessian_iterative):
-    def __init__(self, network, datasets, criterion, accuracy_loss):
-        super().__init__(network, datasets, criterion, accuracy_loss)
-
-    def hessian_calc(self, network, layers, y_classification_mode='binary_logistic_pn1'):
-        self.layers = layers
-        self.y_classification_mode = y_classification_mode
-        HM = hessianmodule.HessianModule(network, self.datasets[True], self.layers, RAM_cap=64, print_log=False)
-        self.HM = HM
-        HM.load_sd(self.get_sd())
-        UTAU = HM.expectation(HM.decomp.UTFAU_comp, self.layers, out_device=HM.device, to_cache=False, print_log=False, y_classification_mode=y_classification_mode)
-        xxT = HM.expectation(HM.decomp.xxT_comp, self.layers, out_device=HM.device, to_cache=False, print_log=False)
-        self.UTAU_eigenvals, self.UTAU_eigenvecs, self.UTAU_eigenvecs_T, self.UTAU_d = {}, {}, {}, {}
-        self.xxT_eigenvals, self.xxT_eigenvecs, self.xxT_eigenvecs_T, self.xxT_d = {}, {}, {}, {}
-        self.norms = {}
-        self.eigenvals = []
-        for layer in self.layers:
-            self.UTAU_eigenvals[layer], self.UTAU_eigenvecs[layer] = HM.utils.eigenthings_tensor_utils(UTAU[layer], device=HM.device, symmetric=True)
-            self.xxT_eigenvals[layer], self.xxT_eigenvecs[layer] = HM.utils.eigenthings_tensor_utils(xxT[layer], device=HM.device, symmetric=True) 
-            self.eigenvals.append(self.UTAU_eigenvals[layer].ger(self.xxT_eigenvals[layer]).reshape(-1))
-            self.eigenvals.append(self.UTAU_eigenvals[layer])
-            self.UTAU_eigenvecs_T[layer] = self.UTAU_eigenvecs[layer].t()
-            self.xxT_eigenvecs_T[layer] = self.xxT_eigenvecs[layer].t()
-            self.UTAU_d[layer] = self.UTAU_eigenvecs[layer].shape[1]
-            self.xxT_d[layer] = self.xxT_eigenvecs[layer].shape[1]
-            ones_mat = torch.ones((self.UTAU_d[layer], self.xxT_d[layer])).to(HM.device)
-            self.norms[layer] = self.UTAU_eigenvecs[layer].square().matmul(ones_mat).matmul(self.xxT_eigenvecs_T[layer].square())
-            self.norms[layer] = self.norms[layer].reshape(-1).sqrt_()
-        self.eigenvals = torch.cat(self.eigenvals)
-        print("Hessian Calculation Complete", flush=True)
-    
-    def iterative_hessian_calc(self):
-        HM = self.HM
-        mean_post = copy.deepcopy(self.BRE.mean_post.detach())
-        mean_diff = torch.norm(self.original_mean_post-mean_post)
-        self.original_mean_post = mean_post
-        #sigma_post = self.BRE.sigma_post_.detach()
-        #sigma_post_standard = self.to_standard(sigma_post)
-        HM.load_vec(mean_post)
-        UTAU = HM.expectation(HM.decomp.UTFAU_comp, self.layers, out_device=HM.device, to_cache=False, print_log=False, y_classification_mode=self.y_classification_mode)
-        xxT = HM.expectation(HM.decomp.xxT_comp, self.layers, out_device=HM.device, to_cache=False, print_log=False)
-        for layer in self.layers: 
-            self.UTAU_eigenvals[layer], self.UTAU_eigenvecs[layer] = HM.utils.eigenthings_tensor_utils(UTAU[layer], device=HM.device, symmetric=True)
-            self.xxT_eigenvals[layer], self.xxT_eigenvecs[layer] = HM.utils.eigenthings_tensor_utils(xxT[layer], device=HM.device, symmetric=True) 
-            self.UTAU_eigenvecs_T[layer] = self.UTAU_eigenvecs[layer].t()
-            self.xxT_eigenvecs_T[layer] = self.xxT_eigenvecs[layer].t()
-            self.UTAU_d[layer] = self.UTAU_eigenvecs[layer].shape[1]
-            self.xxT_d[layer] = self.xxT_eigenvecs[layer].shape[1]
-            ones_mat = torch.ones((self.UTAU_d[layer], self.xxT_d[layer])).to(HM.device)
-            self.norms[layer] = self.UTAU_eigenvecs[layer].square().matmul(ones_mat).matmul(self.xxT_eigenvecs_T[layer].square())
-            self.norms[layer] = self.norms[layer].reshape(-1).sqrt_()
-        #self.BRE.mean_post = nn.Parameter(self.to_hessian(sigma_post_standard))
-        print('mean difference: {:.4g}'.format(mean_diff))
-

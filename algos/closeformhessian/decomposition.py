@@ -64,6 +64,8 @@ class Decomp():
             assert labels is not None
             if len(labels.shape) == 1:
                 labels_comp = labels.unsqueeze(-1)
+            else:
+                labels_comp = labels
             p = torch.Tensor.sigmoid(labels_comp.mul(final_out))
         
         elif y_classification_mode == 'binary_logistic_01' or y_classification_mode == 'multi_logistic_pn1':
@@ -425,7 +427,7 @@ class Decomp():
 
         assert labels is not None
         labels = labels.view(-1, 1)
-        p = self.p_comp(ife, layers, inputs, device, Ws, out_device=device, **kwargs)[layers[0]]
+        p = self.p_comp(ife, layers, inputs, device, Ws, out_device=device, labels=labels, **kwargs)[layers[0]]
         y = torch.zeros_like(p).scatter_(1, labels, 1) # pylint: disable=no-member
         grad = (p - y).unsqueeze(-1)
         FA = grad.matmul(grad.transpose(-1, -2))
@@ -522,3 +524,23 @@ class Decomp():
         eigenvecs = torch.cat(eigenvecs, axis=0).to(out_device) # pylint: disable=no-member
 
         return eigenvals, eigenvecs, kron_pairs
+    
+    def xxT_UTAU_correlation_comp(self, ife, layers, inputs, device, Ws, out_device=None, batch_sum=False, vec1=None, vec2=None, **kwargs):
+        UTAUs = self.UTAU_comp(ife, layers, inputs, device, Ws, **kwargs)
+        xs = self.x_comp(ife, layers, inputs, device, **kwargs)
+        ret = {}
+        for layer in layers:
+            UTAU = UTAUs[layer]
+            x = xs[layer].squeeze(-1)
+            U, S, V = UTAU.svd()
+            UTAU_pv = U[:,1].squeeze(-1)
+            p1 = UTAU_pv.matmul(vec1[layer]).squeeze(-1)
+            p2 = x.matmul(vec2[layer]).squeeze(-1)
+            res = p1.mul(p2)
+            if batch_sum:
+                res = res.sum(axis=0)
+            if out_device is not None:
+                res = res.to(out_device)
+            ret[layer] = res
+        empty_cache(device)
+        return ret

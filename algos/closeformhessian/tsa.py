@@ -182,9 +182,10 @@ class stats_base():
         
         return batchsize
 
-    def auto_dataloader(self, func, dscrop=1, print_log=True):
+    def auto_dataloader(self, func, dscrop=1, print_log=True, batchsize=None):
 
-        batchsize = self.auto_batchsize(func, len(self.ds), print_log)
+        if batchsize is None:
+            batchsize = self.auto_batchsize(func, len(self.ds), print_log)
         self.dl.set_batchsize(batchsize)
         self.dl.set_dscrop(dscrop)
         return self.dl
@@ -210,14 +211,14 @@ class stats_(stats_base):
         super().__init__(HM, comp_layers, out_device)
         return
     
-    def expectation(self, func, dscrop=1, out_device=None, from_cache=True, to_cache=True, print_log=True, **kwargs):
+    def expectation(self, func, dscrop=1, out_device=None, from_cache=True, to_cache=True, print_log=True, batchsize=None, **kwargs):
 
         if from_cache:
             cached_ret = self.load_cache('E', func)
             if cached_ret is not None:
                 return cached_ret
 
-        dataloader = self.auto_dataloader(func, dscrop, print_log)
+        dataloader = self.auto_dataloader(func, dscrop, print_log, batchsize)
 
         sample_count = 0
         if out_device is None:
@@ -323,8 +324,8 @@ class TSA():
 
 def cross_dot(func, Ms):
 
-    def cross_dot_comp(ife, layers, inputs, device, Ws, out_device=None, batch_sum=False):
-        func_rets = func(ife, layers, inputs, device, Ws, out_device=device)
+    def cross_dot_comp(ife, layers, inputs, device, Ws, out_device=None, batch_sum=False, **kwargs):
+        func_rets = func(ife, layers, inputs, device, Ws, out_device=device, **kwargs)
         ret = {}
         for layer in layers:
             func_ret = func_rets[layer]
@@ -341,8 +342,8 @@ def cross_dot(func, Ms):
 
 def cross_cos(func, Ms):
 
-    def cross_cos_comp(ife, layers, inputs, device, Ws, out_device=None, batch_sum=False):
-        func_rets = func(ife, layers, inputs, device, Ws, out_device=device)
+    def cross_cos_comp(ife, layers, inputs, device, Ws, out_device=None, batch_sum=False, **kwargs):
+        func_rets = func(ife, layers, inputs, device, Ws, out_device=device, **kwargs)
         ret = {}
         for layer in layers:
             func_ret = func_rets[layer]
@@ -360,8 +361,8 @@ def cross_cos(func, Ms):
     return cross_cos_comp
 
 def func_gram(func):
-    def func_gram_comp(ife, layers, inputs, device, Ws, out_device=None, batch_sum=False):
-        func_ret = func(ife, layers, inputs, device, Ws, out_device=device, batch_sum=False)
+    def func_gram_comp(ife, layers, inputs, device, Ws, out_device=None, batch_sum=False, **kwargs):
+        func_ret = func(ife, layers, inputs, device, Ws, out_device=device, batch_sum=False, **kwargs)
         ret = {}
         for layer in layers:
             func_vec = func_ret[layer]
@@ -376,8 +377,8 @@ def func_gram(func):
     return func_gram_comp
 
 def func_square(func):
-    def func_square_comp(ife, layers, inputs, device, Ws, out_device=None, batch_sum=False):
-        func_ret = func(ife, layers, inputs, device, Ws, out_device=device, batch_sum=False)
+    def func_square_comp(ife, layers, inputs, device, Ws, out_device=None, batch_sum=False, **kwargs):
+        func_ret = func(ife, layers, inputs, device, Ws, out_device=device, batch_sum=False, **kwargs)
         ret = {}
         for layer in layers:
             func_vec = func_ret[layer]

@@ -283,3 +283,18 @@ class Utils():
             uk = uu[k]
             uu[k] = uk / uk.norm()
         return uu
+
+    def kp_2d(self, t1, t2):
+        return kp_2d(t1, t2)
+
+    def get_layer_info(self):
+        s = 0
+        e = 0
+        sd = self.HM.sd
+        ret = []
+        for k in (sd):
+            e += sd[k].view(-1).size()[0]
+            print(s, e, k)
+            ret.append([s, e, k])
+            s = e
+        return ret

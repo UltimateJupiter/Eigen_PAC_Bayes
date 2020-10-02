@@ -4,13 +4,13 @@ from hpb.hessianpacbayes import *
 
 sd_sgd_sol = 'experiment_log/run_1/models/final.pth'
 sd_init = 'experiment_log/run_1/models/epoch0.pth'
-save_path = 'tmp_log/sigma_post/run_10class_FC2_RL_final.pth'
+save_path = 'tmp_log/sigma_post/run_10class_FC2_600_final.pth'
 HPB_store_path = 'tmp_log/HPB_store/run_FC1_600_test.pth'
 # test_dirc = '../hessian_eigenspace_overlap/CIFAR10_Exp1/experiments/LeNet5_fixlr0.01'
 test_dirc = '../hessian_eigenspace_overlap/MNIST_Exp1/experiments/FC2_fixlr0.01'
 #test_dirc = '../hessian_eigenspace_overlap/MNIST_Exp1/experiments/FC1_600_fixlr0.01'
-#test_dirc = '../hessian_eigenspace_overlap/MNIST_Exp1/experiments/FC2_600_fixlr0.01'
-test_dirc = '../hessian_eigenspace_overlap/MNIST_RandomLabel/experiments/FC2_fixlr0.01_RL'
+test_dirc = '../hessian_eigenspace_overlap/MNIST_Exp1/experiments/FC2_600_fixlr0.01'
+#test_dirc = '../hessian_eigenspace_overlap/MNIST_RandomLabel/experiments/FC2_fixlr0.01_RL'
 #test_dirc = '../hessian_eigenspace_overlap/CIFAR10_Exp1/experiments/FC1_600_fixlr0.01'
 
 seed = 0

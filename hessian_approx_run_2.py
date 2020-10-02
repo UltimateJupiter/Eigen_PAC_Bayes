@@ -5,10 +5,10 @@ from hpb.hessianpacbayes import *
 
 sd_sgd_sol = 'experiment_log/run_1/models/final.pth'
 sd_init = 'experiment_log/run_1/models/epoch0.pth'
-save_path = 'tmp_log/sigma_post/hessian_approx_FC2_300_final.pth'
+save_path = 'tmp_log/sigma_post/hessian_approx_FC2_600_test.pth'
 
 
-test_dirc = '../hessian_eigenspace_overlap/MNIST_Binary/experiments/FC2_300_sgd0.01m0.9LS_l1d_pic01_labelpn1_bt100'
+test_dirc = '../hessian_eigenspace_overlap/MNIST_Binary/experiments/FC2_600_sgd0.01m0.9LS_l1d_pic01_labelpn1_bt100'
 
 layers = ['fc1', 'fc2', 'fc3']
 
